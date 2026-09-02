@@ -1,0 +1,17 @@
+name: alumna-mongodb
+version: 0.1.0
+
+dependencies:
+  alumna:
+    github: alumna/backend
+    version: ~> 0.5.10
+  cryomongo:
+    github: alumna/cryomongo
+    version: ~> 0.17.4
+
+authors:
+  - Paulo Coghi <paulo@airsailer.io>
+
+crystal: '>= 1.20.2'
+
+license: MIT
