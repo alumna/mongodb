@@ -57,7 +57,8 @@ class Alumna::MongoAdapter
       name.empty? ? nil : name
     end
 
-    private def self.safe_message(ex : Exception) : String
+    # Public so `#transaction` can wrap driver errors without leaking URI userinfo.
+    def self.safe_message(ex : Exception) : String
       msg = ex.message
       return "MongoDB error" unless msg && !msg.empty?
       # Strip URI userinfo so a password in a connection error never leaves the adapter.

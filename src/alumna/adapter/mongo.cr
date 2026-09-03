@@ -58,8 +58,8 @@ module Alumna
       return filter if filter.is_a?(ServiceError)
       results = Array(Hash(String, AnyData)).new(initial_capacity: limit || 16)
 
-      err = mongo {
-        @collection.find(filter, sort: sort, projection: projection, skip: skip, limit: limit) do |doc|
+      err = mongo { |session|
+        @collection.find(filter, sort: sort, projection: projection, skip: skip, limit: limit, session: session) do |doc|
           results << BsonRead.to_record(doc, @field_count)
         end
       }
@@ -73,7 +73,7 @@ module Alumna
       oid = Identity.parse?(raw_id)
       return nil unless oid
 
-      doc = mongo { @collection.find_one(Identity.filter(oid)) }
+      doc = mongo { |session| @collection.find_one(Identity.filter(oid), session: session) }
       return doc if doc.is_a?(ServiceError)
       return nil unless doc
       BsonRead.to_record(doc, @field_count)
@@ -82,7 +82,7 @@ module Alumna
     def create(ctx : RuleContext) : Hash(String, AnyData) | ServiceError
       oid = BSON::ObjectId.new
       doc = BsonWrite.document(oid, ctx.data)
-      err = mongo { @collection.insert_one(doc) }
+      err = mongo { |session| @collection.insert_one(doc, session: session) }
       return err if err.is_a?(ServiceError)
       record_from_data(oid, ctx.data)
     end
@@ -97,7 +97,7 @@ module Alumna
       return ServiceError.not_found unless oid
 
       replacement = BsonWrite.document(oid, ctx.data)
-      result = mongo { @collection.replace_one(Identity.filter(oid), replacement) }
+      result = mongo { |session| @collection.replace_one(Identity.filter(oid), replacement, session: session) }
       return result if result.is_a?(ServiceError)
       return ServiceError.not_found if matched_zero?(result)
       record_from_data(oid, ctx.data)
@@ -118,7 +118,7 @@ module Alumna
       return ServiceError.not_found unless oid
 
       filter = Identity.filter(oid)
-      existing_doc = mongo { @collection.find_one(filter) }
+      existing_doc = mongo { |session| @collection.find_one(filter, session: session) }
       return existing_doc if existing_doc.is_a?(ServiceError)
       return ServiceError.not_found unless existing_doc
 
@@ -129,7 +129,7 @@ module Alumna
       end
 
       update_doc = BsonWrite.update_document(ctx.data, unset_paths, has_set)
-      result = mongo { @collection.update_one(filter, update_doc) }
+      result = mongo { |session| @collection.update_one(filter, update_doc, session: session) }
       return result if result.is_a?(ServiceError)
       return ServiceError.not_found if matched_zero?(result)
 
@@ -150,7 +150,7 @@ module Alumna
       oid = Identity.parse?(raw_id)
       return ServiceError.not_found unless oid
 
-      result = mongo { @collection.delete_one(Identity.filter(oid)) }
+      result = mongo { |session| @collection.delete_one(Identity.filter(oid), session: session) }
       return result if result.is_a?(ServiceError)
       n = result.try(&.n) || 0
       return ServiceError.not_found if n == 0
@@ -158,12 +158,19 @@ module Alumna
     end
 
     def create_indexes! : Nil
+      # Indexes are boot-time. They do not join `#transaction`.
       Indexes.create!(@collection, @index_models)
     end
 
-    private def mongo(& : -> T) : T | ServiceError forall T
-      yield
+    # Run a collection call. Pass the fiber-local session when `#transaction` is open.
+    # The map lock is only the session lookup (D19). Do not wrap the round trip.
+    private def mongo(& : Mongo::Session::ClientSession? -> T) : T | ServiceError forall T
+      session = fiber_session
+      yield session
     rescue ex : Mongo::Error
+      # with_transaction retries TransientTransactionError. Re-raise those only
+      # when this fiber has a session. Same line so standalone kcov sees it.
+      raise ex if session && (ex.transient_transaction? || ex.unknown_transaction?)
       Errors.from_mongo(ex, @index_names)
     end
 
@@ -317,3 +324,4 @@ require "./mongo/query"
 require "./mongo/find_options"
 require "./mongo/indexes"
 require "./mongo/errors"
+require "./mongo/transactions"
