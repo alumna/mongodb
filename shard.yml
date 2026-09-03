@@ -1,10 +1,10 @@
 name: alumna-mongodb
-version: 0.8.0
+version: 0.8.1
 
 dependencies:
   alumna:
     github: alumna/backend
-    version: ~> 0.5.10
+    version: ~> 0.6.0
   cryomongo:
     github: alumna/cryomongo
     version: ~> 0.17.5
