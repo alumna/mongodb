@@ -16,6 +16,9 @@ module Alumna
     @index_models : Array(BSON)
     @index_names : Hash(String, String)
 
+    # Shared empty `$unset` list when the patch has no `$unset` key (D34).
+    EMPTY_UNSET = [] of String
+
     def initialize(
       client : Mongo::Client,
       database : String,
@@ -103,8 +106,13 @@ module Alumna
     def patch(ctx : RuleContext) : Hash(String, AnyData) | ServiceError
       raw_id = ctx.id
       return ServiceError.bad_request("ID required for patch") unless raw_id
-      if dotted = dotted_key_error(ctx.data)
-        return dotted
+
+      # D34: pull `$unset` out first. Remaining keys are `$set`.
+      unset_paths = take_unset_paths(ctx.data)
+      return unset_paths if unset_paths.is_a?(ServiceError)
+
+      if err = patch_key_error(ctx.data)
+        return err
       end
       oid = Identity.parse?(raw_id)
       return ServiceError.not_found unless oid
@@ -115,18 +123,23 @@ module Alumna
       return ServiceError.not_found unless existing_doc
 
       record = BsonRead.to_record(existing_doc, @field_count)
-      unless has_write_keys?(ctx.data)
+      has_set = has_write_keys?(ctx.data)
+      if unset_paths.empty? && !has_set
         return record
       end
 
-      update_doc = BsonWrite.set_document(ctx.data)
+      update_doc = BsonWrite.update_document(ctx.data, unset_paths, has_set)
       result = mongo { @collection.update_one(filter, update_doc) }
       return result if result.is_a?(ServiceError)
       return ServiceError.not_found if matched_zero?(result)
 
+      # Dotted keys walk nested hashes. Do not assign "user.name" as a top-level field.
       ctx.data.each do |key, value|
         next if key == "id" || key == "_id"
-        record[key] = value
+        apply_patch_key(record, key, value)
+      end
+      unset_paths.each do |path|
+        apply_unset_key(record, path)
       end
       record
     end
@@ -164,12 +177,123 @@ module Alumna
       record
     end
 
+    # Replace is a whole document. A key with `.` would be a field name that
+    # contains dots, not a nested path. Reject those keys (except stripped id).
     private def dotted_key_error(data : Hash(String, AnyData)) : ServiceError?
       data.each_key do |key|
         next if key == "id" || key == "_id"
         return ServiceError.bad_request("Dotted keys are not allowed") if key.includes?('.')
       end
       nil
+    end
+
+    # Patch may `$set` a dotted key when it matches a schema nested path.
+    # Unknown path is 400. Top-level keys without `.` stay as they are.
+    # Call after `$unset` is stripped (D34) so remaining keys are `$set` only.
+    private def patch_key_error(data : Hash(String, AnyData)) : ServiceError?
+      data.each_key do |key|
+        next if key == "id" || key == "_id"
+        next unless key.includes?('.')
+        return ServiceError.bad_request("Unknown nested path: #{key}") unless @sch.find_field(key)
+      end
+      nil
+    end
+
+    # D34: reserved `$unset` is a String path or an Array of path strings.
+    # Strip it from *data* so it is never `$set`. Missing key → empty list.
+    private def take_unset_paths(data : Hash(String, AnyData)) : Array(String) | ServiceError
+      return EMPTY_UNSET unless data.has_key?("$unset")
+      raw = data.delete("$unset")
+      case raw
+      when String
+        acc = Array(String).new(initial_capacity: 1)
+        if err = append_unset_path(raw, acc)
+          return err
+        end
+        acc
+      when Array
+        acc = Array(String).new(initial_capacity: raw.size)
+        raw.each do |item|
+          unless item.is_a?(String)
+            return ServiceError.bad_request("Invalid $unset value")
+          end
+          if err = append_unset_path(item, acc)
+            return err
+          end
+        end
+        acc
+      else
+        ServiceError.bad_request("Invalid $unset value")
+      end
+    end
+
+    # Skip id / _id like other writes. Schema path must exist.
+    private def append_unset_path(path : String, acc : Array(String)) : ServiceError?
+      return nil if path == "id" || path == "_id"
+      return ServiceError.bad_request("Unknown nested path: #{path}") unless @sch.find_field(path)
+      acc << path
+      nil
+    end
+
+    # Set one patch key on the in-memory record. Reuse the existing key string
+    # when there is no `.`. For dotted paths, walk nested hashes. Create a
+    # missing intermediate hash (MongoDB `$set` on "user.name" creates the path).
+    private def apply_patch_key(record : Hash(String, AnyData), key : String, value : AnyData) : Nil
+      unless key.includes?('.')
+        record[key] = value
+        return
+      end
+
+      current = record
+      start = 0
+      loop do
+        dot = key.index('.', start)
+        unless dot
+          current[key[start..]] = value
+          return
+        end
+
+        part = key[start...dot]
+        start = dot + 1
+        nested = current[part]?
+        if nested.is_a?(Hash(String, AnyData))
+          current = nested
+        else
+          created = Hash(String, AnyData).new
+          current[part] = created
+          current = created
+        end
+      end
+    end
+
+    # Remove one `$unset` path from the in-memory record. Do not set null.
+    # Do not assign "user.name" as a top-level key. Missing parent, or a
+    # parent that is not a hash, is a no-op (MongoDB `$unset` is too).
+    # An empty parent hash stays (MongoDB does not delete the parent).
+    private def apply_unset_key(record : Hash(String, AnyData), key : String) : Nil
+      unless key.includes?('.')
+        record.delete(key)
+        return
+      end
+
+      current = record
+      start = 0
+      loop do
+        dot = key.index('.', start)
+        unless dot
+          current.delete(key[start..])
+          return
+        end
+
+        part = key[start...dot]
+        start = dot + 1
+        nested = current[part]?
+        if nested.is_a?(Hash(String, AnyData))
+          current = nested
+        else
+          return
+        end
+      end
     end
 
     private def has_write_keys?(data : Hash(String, AnyData)) : Bool

@@ -159,4 +159,26 @@ describe Alumna::MongoAdapter::Indexes do
     dup.status.should eq(422)
     dup.details["email"].should eq("already exists")
   end
+
+  it "unsets a unique field unless another document already omits it" do
+    name = "wave15_unset_unique"
+    schema = Alumna::Schema.new(strict: false)
+      .str("email", unique: true, required: false)
+      .str("name", required: false)
+    adapter = mongo_adapter(name, schema)
+    adapter.create_indexes!
+
+    first = as_hash(adapter.create(ctx(adapter, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Ada", email: "ada@test.com"))))
+    id = object_id_id(first)
+    cleared = as_hash(adapter.patch(ctx(adapter, Alumna::ServiceMethod::Patch, id: id, data: {"$unset" => "email".as(Alumna::AnyData)})))
+    cleared.has_key?("email").should be_false
+    got = as_hash(adapter.get(ctx(adapter, Alumna::ServiceMethod::Get, id: id)))
+    got.has_key?("email").should be_false
+
+    second = as_hash(adapter.create(ctx(adapter, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Bob", email: "bob@test.com"))))
+    id2 = object_id_id(second)
+    clash = as_error(adapter.patch(ctx(adapter, Alumna::ServiceMethod::Patch, id: id2, data: {"$unset" => "email".as(Alumna::AnyData)})))
+    clash.status.should eq(422)
+    clash.details["email"].should eq("already exists")
+  end
 end

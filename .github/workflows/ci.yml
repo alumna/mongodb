@@ -20,7 +20,7 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# GitHub deps (D16): alumna ~> 0.5.10, cryomongo ~> 0.17.4 (bson.cr 0.9.2 via cryomongo).
+# GitHub deps (D16): alumna ~> 0.5.10, cryomongo ~> 0.17.5 (bson.cr 0.9.2 via cryomongo).
 # This workflow is the published repo root. Standalone mongo:8.0 (no auth, no replica set).
 # Specs default to mongodb://127.0.0.1:27017. Do not set GLIBC_TUNABLES here; that
 # tunable is only a local workaround for kernel 7.1.x-zabbly+ (SERVER-121912).

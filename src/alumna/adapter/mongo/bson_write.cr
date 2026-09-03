@@ -12,13 +12,28 @@ class Alumna::MongoAdapter
       end
     end
 
-    # `{ $set: { fields } }` in one Builder. Nested Hash/Array use document/array.
-    def self.set_document(data : Hash(String, AnyData)) : BSON
-      build(data.size * 16 + 16) do |bson|
-        bson.document("$set") do
-          data.each do |key, value|
-            next if key == "id" || key == "_id"
-            write_field(bson, key, value)
+    # `{ $set: { fields } }` and/or `{ $unset: { path: "" } }` on one parent
+    # Builder. Nested Hash/Array in `$set` still use document/array.
+    # A dotted `$set` key stays a field name that contains dots (`"user.name"`).
+    # That is MongoDB nested `$set`. Do not split it into a nested document here.
+    # Omit `$set` when *has_set* is false. Omit `$unset` when *unset_paths* is empty.
+    # `$unset` values are empty strings (MongoDB ignores the value).
+    def self.update_document(data : Hash(String, AnyData), unset_paths : Array(String), has_set : Bool) : BSON
+      cap = (data.size + unset_paths.size) * 16 + 32
+      build(cap) do |bson|
+        if has_set
+          bson.document("$set") do
+            data.each do |key, value|
+              next if key == "id" || key == "_id"
+              write_field(bson, key, value)
+            end
+          end
+        end
+        unless unset_paths.empty?
+          bson.document("$unset") do
+            unset_paths.each do |path|
+              bson[path] = ""
+            end
           end
         end
       end
