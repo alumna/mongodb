@@ -1,5 +1,5 @@
 name: alumna-mongodb
-version: 0.1.0
+version: 0.8.0
 
 dependencies:
   alumna:
@@ -7,7 +7,7 @@ dependencies:
     version: ~> 0.5.10
   cryomongo:
     github: alumna/cryomongo
-    version: ~> 0.17.4
+    version: ~> 0.17.5
 
 authors:
   - Paulo Coghi <paulo@airsailer.io>

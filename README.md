@@ -1,6 +1,6 @@
 # Alumna MongoDB Adapter
 
-[![Crystal CI](https://github.com/alumna/mongodb/actions/workflows/ci.yml/badge.svg)](https://github.com/alumna/mongodb/actions/workflows/ci.yml) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Crystal CI](https://github.com/alumna/mongodb/actions/workflows/ci.yml/badge.svg)](https://github.com/alumna/mongodb/actions/workflows/ci.yml) [![codecov](https://codecov.io/github/alumna/mongodb/graph/badge.svg?token=dFAHQ7KKzO)](https://codecov.io/github/alumna/mongodb) ![Dynamic YAML Badge](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Falumna%2Fmongodb%2Frefs%2Fheads%2Fmaster%2Fshard.yml&query=version&prefix=v&label=version) ![GitHub License](https://img.shields.io/github/license/alumna/mongodb)
 
 MongoDB adapter for the [Alumna Backend Framework](https://github.com/alumna/backend). `Alumna::MongoAdapter` implements `Alumna::Service` against MongoDB 8.0.
 
@@ -66,10 +66,26 @@ app.use("/products", products)
 app.listen(3000)
 ```
 
-`Alumna.mongo` is the same as `Alumna::MongoAdapter.new`. The block form yields `with svc` so you can mount rules:
+`Alumna.mongo` is the same as `Alumna::MongoAdapter.new`. Arguments, in order:
+
+- **`client`** (`Mongo::Client`) - one client for the process. Do not open a new client per request.
+- **`database`** (`String`) - MongoDB database name. In the example, `"shop"`.
+- **`collection`** (`String`) - collection name inside that database. In the example, `"products"`.
+- **`schema`** (`Alumna::Schema`) - required. Field list, indexes, and typed filters. The adapter raises `ArgumentError` if this is missing.
+- **`max_limit`** (`Int32?`, default `nil`) - optional. When set, a client `$limit` above this value is clamped. `nil` means no adapter clamp. App `max_query_limit` may also clamp. The effective limit is the tighter of the two.
+
+The block form yields `with svc` so you can mount rules:
 
 ```crystal
 products = Alumna.mongo(client, "shop", "products", ProductSchema) do
+  before validate, on: :write
+end
+```
+
+You can pass `max_limit` before the block:
+
+```crystal
+products = Alumna.mongo(client, "shop", "products", ProductSchema, max_limit: 100) do
   before validate, on: :write
 end
 ```
@@ -169,13 +185,26 @@ v1 indexes are not sparse. Two documents that omit the same unique field also co
 
 | Alumna | MongoDB |
 |---|---|
-| `id` — String, 24 hex characters | `_id` — `BSON::ObjectId` |
+| `id` - String, 24 hex characters | `_id` - `BSON::ObjectId` |
 
 The adapter translates at the boundary. It does not store a field named `id` in the collection.
 
 - **create:** ignores incoming `id` / `_id`, generates an ObjectId, returns hex `id`.
 - **get:** missing, invalid hex, or unknown id → `nil` (HTTP 404 through `Service`).
 - **update / patch / remove:** nil id → 400; invalid hex or missing document → 404.
+- **update:** full replace. A remaining key that contains `.` returns **400**. Replace is a document, not a path update.
+- **patch:** `$set` of provided keys. A dotted key that matches a schema nested path (`user.name`) updates that nested field. Unknown nested path (`nope.x`, `user.nope`) returns **400**. `id` / `_id` are ignored. The returned record is a nested hash, not a top-level key named `user.name`.
+- **patch `$unset`:** reserved key.
+  - Value is a path string or a list of path strings.
+  - The adapter strips it and sends MongoDB `$unset` (same command as `$set` when both appear).
+  - Unknown path returns **400**.
+  - JSON null on a field is `$set` of null, not unset.
+  - `id` / `_id` in the list are ignored.
+  - HTTP `validate` with `strict: true` rejects unknown key `$unset`. Use `strict: false`, skip validate, or call `adapter.patch` with a Hash.
+
+Path `ctx.id` is always the adapter. Bad hex is 404 / nil, not 422.
+
+Apps may set `.str("id", format: :object_id)` (or another body field) so invalid ObjectId hex in **body** fields returns 422. That does not change path `ctx.id`.
 
 ---
 
@@ -219,6 +248,10 @@ Specs use `ENV["MONGODB_URI"]? || "mongodb://127.0.0.1:27017"`. No replica set. 
 There is no SQL. The adapter talks BSON to MongoDB.
 
 Every filter, `$sort`, and `$select` field must exist on the schema (or be `id` / `_id`). Unknown fields return **400**. That is stricter than MemoryAdapter, which treats unknown filters as strings.
+
+A patch key that contains `.` must match a schema nested path. Unknown nested paths return **400**. Update still rejects dotted keys.
+
+A patch `"$unset"` path must exist on the schema. Unknown `$unset` paths return **400**. JSON null is not unset.
 
 Do not send passwords in error messages. Network and other Mongo errors become **500** with a short message.
 
