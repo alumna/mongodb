@@ -130,4 +130,3 @@ describe "MongoAdapter gridfs" do
     end
   end
 end
-

@@ -10,8 +10,6 @@
 * Missing files raise `MongoAdapter::GridFSError` with `status 404`. Other Mongo errors map to `status 500`.
 
 ### Changed
-* **docs:** ROADMAP lists **0.9.0** as shipped (`#watch`).
-  Next product work is client-side encryption after the driver.
 * **docs:** HTTP `validate` with `strict: true` skips reserved `"$unset"`. Unknown real fields still return **422**.
 * GitHub CI matrix (`fail-fast: false`) runs four MongoDB 8.0 topologies:
   * standalone,

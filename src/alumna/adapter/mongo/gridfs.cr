@@ -142,7 +142,7 @@ class Alumna::MongoAdapter
     private def parse_file_id!(id : String?) : BSON::ObjectId
       return BSON::ObjectId.new if id.nil? # id is only used for open_upload_stream.
 
-      # GridFS file IDs are ObjectId hex strings (D3/D5). Invalid hex is 404, not 500.
+                                   # GridFS file IDs are ObjectId hex strings (D3/D5). Invalid hex is 404, not 500.
       return BSON::ObjectId.new(id) if Identity.valid?(id)
 
       raise GridFSError.not_found("Invalid GridFS file id")
@@ -212,4 +212,3 @@ class Alumna::MongoAdapter
     GridFS.new(bucket, files, timeout_ms)
   end
 end
-
