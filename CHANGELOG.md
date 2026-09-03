@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 - 2026-09-03
 
 ### Added
 * `MongoAdapter#grid_fs` opt-in GridFS helpers:
