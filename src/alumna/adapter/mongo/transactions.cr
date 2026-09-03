@@ -18,7 +18,7 @@ class Alumna::MongoAdapter
   # CRUD methods pick up the session from the fiber map. Do not pass a session in.
   def transaction(& : -> T) : T | ServiceError forall T
     raise TransactionError.new(NESTED_MESSAGE) if lookup_session(Fiber.current)
-    return run_transaction { yield } if transactions_supported?
+    return run_transaction { yield } if clustered_topology?
     raise TransactionError.new(STANDALONE_MESSAGE)
   end
 
@@ -32,8 +32,9 @@ class Alumna::MongoAdapter
     @@fiber_sessions_lock.synchronize { @@fiber_sessions[fiber]? }
   end
 
-  # Replica set, sharded, or load-balanced can run transactions. Single cannot.
-  private def transactions_supported? : Bool
+  # Replica set, sharded, or load-balanced. Standalone (Single) cannot run
+  # transactions or change streams. Shared by `#transaction` and `#watch`.
+  private def clustered_topology? : Bool
     discover_topology if @client.topology.type.unknown?
     type = @client.topology.type
     type.replica_set_with_primary? || type.replica_set_no_primary? || type.sharded? || type.load_balanced?

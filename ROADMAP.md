@@ -4,6 +4,11 @@ What this adapter shipped, and what is still open. GitHub CI stays standalone `m
 
 ## Delivered
 
+### Unreleased
+* Added `MongoAdapter#watch` (replica set or mongos).
+* Standalone `#watch` raises `WatchError`.
+* Resume token is cloned BSON **Bytes**. Pass it as `resume_after:`.
+
 ### 0.8.2 (2026-09-03)
 * Added `MongoAdapter#transaction` (replica set or mongos).
 * Standalone `#transaction` raises `TransactionError`.
@@ -18,6 +23,5 @@ What this adapter shipped, and what is still open. GitHub CI stays standalone `m
 * GitHub CI and kcov 100% on `src/`.
 
 ## Next
-* Change streams (opt-in, replica set).
 * GridFS.
 * Client-side encryption.

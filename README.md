@@ -16,9 +16,10 @@ See [ROADMAP.md](ROADMAP.md) for what each version shipped and what is still ope
 5. [Indexes and Uniqueness](#5-indexes-and-uniqueness)
 6. [`id` vs `_id`](#6-id-vs-_id)
 7. [Transactions](#7-transactions)
-8. [Testing](#8-testing)
-9. [Security](#9-security)
-10. [License](#10-license)
+8. [Change streams](#8-change-streams)
+9. [Testing](#9-testing)
+10. [Security](#10-security)
+11. [License](#11-license)
 
 ---
 
@@ -246,7 +247,61 @@ The last value of the block is what `#transaction` sees. A `ServiceError` aborts
 
 ---
 
-## 8. Testing
+## 8. Change streams
+
+`MongoAdapter#watch` listens for inserts, updates, replaces, and deletes on this adapter’s collection.
+
+You need a **replica set** or mongos. A standalone server raises `Alumna::MongoAdapter::WatchError`.
+
+Connect with `replicaSet` in the URI (same as transactions).
+
+Events are `Hash(String, AnyData)` with snake_case keys:
+
+| Key | Meaning |
+|---|---|
+| `operation_type` | `"insert"`, `"update"`, `"replace"`, `"delete"`, … |
+| `resume_token` | Cloned BSON bytes. Pass them as `resume_after:` to continue. |
+| `document_id` | Alumna `id` hex from `documentKey._id` |
+| `document_key` | Document key with `_id` mapped to `id` |
+| `full_document` | Stored document when MongoDB sends it (`to_record`) |
+| `ns` | `{ "db" => …, "coll" => … }` when present |
+
+The resume token is **Bytes**, not a String. It is a clone of the event `_id` BSON. `BSON.new(bytes)` is how the adapter sends `resume_after` to the driver.
+
+Prefer the block form. It closes the cursor in `ensure`:
+
+```crystal
+products.watch(max_await_time_ms: 1000_i64) do |event|
+  puts event["operation_type"]
+  puts event["document_id"]
+end
+```
+
+If you keep the wrapper, you must call `#close`. `#next` waits. `#try_next` polls (returns `nil` when idle):
+
+```crystal
+stream = products.watch(max_await_time_ms: 1000_i64)
+begin
+  products.create(create_ctx)
+  if event = stream.try_next
+    token = event["resume_token"] # Bytes
+    later = products.watch(resume_after: token.as(Bytes))
+    later.close
+  end
+ensure
+  stream.close
+end
+```
+
+Optional arguments: `resume_after` (Bytes), `max_await_time_ms`, `full_document` (`"updateLookup"` so an update event includes `full_document`).
+
+The collection should exist before `#watch`. Create one document first if you just dropped it.
+
+GitHub CI stays standalone `mongo:8.0`. Live watch specs skip unless `MONGODB_URI` includes `replicaSet=`.
+
+---
+
+## 9. Testing
 
 Use Alumna `AdapterSuite`. MongoDB ids are ObjectId hex, not `"1"`, `"2"`. Mixed `$sort` follows BSON, not SQLite.
 
@@ -279,11 +334,11 @@ Pass `expect_incremental_ids: false` and `mixed_sort: :bson`. Do not use the sql
 
 Specs use `ENV["MONGODB_URI"]? || "mongodb://127.0.0.1:27017"`. Default local and GitHub CI are standalone. No auth required for local tests.
 
-`#transaction` live commit and abort examples need a replica set and skip unless `MONGODB_URI` includes `replicaSet=`. Standalone `#transaction` raises `TransactionError`. GitHub CI stays standalone `mongo:8.0`.
+`#transaction` live commit and abort examples, and `#watch` live insert/update/delete examples, need a replica set and skip unless `MONGODB_URI` includes `replicaSet=`. Standalone `#transaction` raises `TransactionError`. Standalone `#watch` raises `WatchError`. GitHub CI stays standalone `mongo:8.0`.
 
 ---
 
-## 9. Security
+## 10. Security
 
 There is no SQL. The adapter talks BSON to MongoDB.
 
@@ -297,6 +352,6 @@ Do not send passwords in error messages. Network and other Mongo errors become *
 
 ---
 
-## 10. License
+## 11. License
 
 MIT
