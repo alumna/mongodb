@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1 - 2026-09-03
+
+### Changed
+* Updated dependencies: Alumna Backend v0.6.0
+
 ## 0.8.0 - 2026-09-03
 
 ### Performance
