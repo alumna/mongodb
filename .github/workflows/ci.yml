@@ -21,53 +21,85 @@ concurrency:
   cancel-in-progress: true
 
 # GitHub deps (D16): alumna ~> 0.6.0, cryomongo ~> 0.17.5 (bson.cr 0.9.2 via cryomongo).
-# This workflow is the published repo root. Standalone mongo:8.0 (no auth, no replica set).
-# Specs default to mongodb://127.0.0.1:27017. Do not set GLIBC_TUNABLES here; that
-# tunable is only a local workaround for kernel 7.1.x-zabbly+ (SERVER-121912).
+# Four topologies via cryomongo docker-topology.sh after shards install.
+# Adapter URIs have no auth. Do not set GLIBC_TUNABLES here; that tunable is
+# only a local workaround for kernel 7.1.x-zabbly+ (SERVER-121912).
+# Coverage (kcov) stays one standalone job. Do not use services: mongo:8.0
+# for clustered cells — a service container cannot start a replica set or mongos.
 
 jobs:
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        # os: [ubuntu-latest, macos-latest, windows-latest]
-        os: [ubuntu-latest]
-        crystal: [latest]
-    runs-on: ${{ matrix.os }}
-    env:
-      MONGODB_URI: mongodb://127.0.0.1:27017
-    services:
-      mongodb:
-        image: mongo:8.0
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })' --quiet"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
+  lint:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - uses: crystal-lang/install-crystal@v1
         with:
-          crystal: ${{ matrix.crystal }}
+          crystal: latest
+      - run: crystal tool format --check
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - topology: standalone
+            uri: mongodb://127.0.0.1:27017
+          - topology: replicaset
+            uri: mongodb://127.0.0.1:27017/?replicaSet=rs0
+          - topology: sharded
+            uri: mongodb://127.0.0.1:27017
+          - topology: load-balanced
+            uri: mongodb://127.0.0.1:8000/?loadBalanced=true
+    runs-on: ubuntu-latest
+    name: MongoDB 8.0 ${{ matrix.topology }}
+    env:
+      TOPOLOGY: ${{ matrix.topology }}
+      MONGODB_URI: ${{ matrix.uri }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: latest
       - uses: actions/cache@v4
         with:
           path: |
             lib
             ~/.cache/shards
             %USERPROFILE%\.cache\shards
-          key: ${{ runner.os }}-crystal-${{ matrix.crystal }}-shards-${{ hashFiles('shard.yml') }}
+          key: ${{ runner.os }}-crystal-latest-shards-${{ hashFiles('shard.yml') }}
           restore-keys: |
-            ${{ runner.os }}-crystal-${{ matrix.crystal }}-shards-
+            ${{ runner.os }}-crystal-latest-shards-
       - run: shards install
-      - run: crystal tool format --check
 
-      # 1. Run standard (Single-Threaded) tests
+      # Clustered cells cannot use services: mongo:8.0. Standalone uses the
+      # same script so 27017 is not bound twice.
+      - name: Start MongoDB ${{ matrix.topology }}
+        run: |
+          set -euo pipefail
+          script="lib/cryomongo/scripts/docker-topology.sh"
+          if [[ ! -f "$script" ]]; then
+            echo "missing $script after shards install" >&2
+            ls -la lib/cryomongo/scripts 2>/dev/null || true
+            exit 1
+          fi
+          bash "$script" "${{ matrix.topology }}"
+
+      - name: Start HAProxy (load-balanced)
+        if: matrix.topology == 'load-balanced'
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y haproxy
+          lb="lib/cryomongo/scripts/run-load-balancer.sh"
+          if [[ ! -f "$lb" ]]; then
+            echo "missing $lb after shards install" >&2
+            exit 1
+          fi
+          bash "$lb" start
+
       - name: Run specs (Single-Threaded)
         run: crystal spec --error-trace --verbose
 
-      # 2. Run Execution Context (Multi-Threaded) tests
       - name: Run specs (Multi-Threaded)
         run: crystal spec -Dpreview_mt -Dexecution_context --error-trace --verbose
 
@@ -77,6 +109,7 @@ jobs:
       contents: read
       pull-requests: write
     env:
+      TOPOLOGY: standalone
       MONGODB_URI: mongodb://127.0.0.1:27017
     services:
       mongodb:

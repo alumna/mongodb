@@ -16,7 +16,7 @@ describe "MongoAdapter transactions" do
   end
 
   it "raises a clear error on a standalone server" do
-    pending!("this process uses a replica set") if replica_set_uri?
+    pending!("this process uses a clustered topology") if clustered?
     adapter = mongo_adapter("wave16_standalone")
     expect_raises(Alumna::MongoAdapter::TransactionError, /replica set/) do
       adapter.transaction { 1 }
@@ -24,7 +24,7 @@ describe "MongoAdapter transactions" do
   end
 
   it "does not put a URI password in the standalone transaction error" do
-    pending!("this process uses a replica set") if replica_set_uri?
+    pending!("this process uses a clustered topology") if clustered?
     adapter = mongo_adapter("wave16_standalone_msg")
     message = ""
     begin
@@ -37,7 +37,7 @@ describe "MongoAdapter transactions" do
   end
 
   it "commits several CRUD calls in one transaction" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = mongo_adapter("wave16_commit", txn_schema)
     id = ""
     adapter.transaction do
@@ -58,7 +58,7 @@ describe "MongoAdapter transactions" do
   end
 
   it "aborts and rolls back when the block raises" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = mongo_adapter("wave16_abort_raise", txn_schema)
     expect_raises(Exception, "boom") do
       adapter.transaction do
@@ -70,7 +70,7 @@ describe "MongoAdapter transactions" do
   end
 
   it "aborts when the block returns ServiceError" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = mongo_adapter("wave16_abort_svc", txn_schema)
     adapter.create_indexes!
     as_hash(adapter.create(ctx(adapter, Alumna::ServiceMethod::Create, data: Alumna.hash(email: "a@test.com"))))
@@ -85,7 +85,7 @@ describe "MongoAdapter transactions" do
   end
 
   it "commits remove inside the transaction" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = mongo_adapter("wave16_remove", txn_schema)
     keep = as_hash(adapter.create(ctx(adapter, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Keep"))))
     gone = as_hash(adapter.create(ctx(adapter, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Gone"))))
@@ -97,7 +97,7 @@ describe "MongoAdapter transactions" do
   end
 
   it "raises when #transaction is nested on the same fiber" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = mongo_adapter("wave16_nested", txn_schema)
     nested = false
     adapter.transaction do
@@ -112,7 +112,7 @@ describe "MongoAdapter transactions" do
   end
 
   it "can start a new transaction after commit and after abort" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = mongo_adapter("wave16_reuse", txn_schema)
     adapter.transaction do
       as_hash(adapter.create(ctx(adapter, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "One"))))

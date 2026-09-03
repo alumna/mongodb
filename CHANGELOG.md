@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Added
+* `MongoAdapter#grid_fs` opt-in GridFS helpers:
+  * upload/download/delete/rename by file id (ObjectId hex string),
+  * upload/download/delete/rename by filename,
+  * download methods return GridFS file documents as `Hash(String, AnyData)` with `id`, `filename`, `length`, `chunkSize`, `uploadDate`, and `metadata`.
+* Missing files raise `MongoAdapter::GridFSError` with `status 404`. Other Mongo errors map to `status 500`.
+
+### Changed
+* **docs:** ROADMAP lists **0.9.0** as shipped (`#watch`).
+  Next product work is client-side encryption after the driver.
+* **docs:** HTTP `validate` with `strict: true` skips reserved `"$unset"`. Unknown real fields still return **422**.
+* GitHub CI matrix (`fail-fast: false`) runs four MongoDB 8.0 topologies:
+  * standalone,
+  * replica set,
+  * sharded,
+  * load-balanced.
+* Coverage (kcov) stays one standalone job. `format --check` runs once in a lint job.
+* Specs use `TOPOLOGY` plus URI / hello (`standalone?` / `clustered?`).
+  Live `#transaction` / `#watch` run on clustered cells.
+  Standalone-only examples skip when clustered.
+  CRUD, indexes, AdapterSuite, and GridFS run on all four.
+
 ## 0.9.0 - 2026-09-03
 
 ### Added

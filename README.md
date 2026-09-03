@@ -16,10 +16,11 @@ See [ROADMAP.md](ROADMAP.md) for what each version shipped and what is still ope
 5. [Indexes and Uniqueness](#5-indexes-and-uniqueness)
 6. [`id` vs `_id`](#6-id-vs-_id)
 7. [Transactions](#7-transactions)
-8. [Change streams](#8-change-streams)
-9. [Testing](#9-testing)
-10. [Security](#10-security)
-11. [License](#11-license)
+8. [GridFS](#8-gridfs)
+9. [Change streams](#9-change-streams)
+10. [Testing](#10-testing)
+11. [Security](#11-security)
+12. [License](#12-license)
 
 ---
 
@@ -204,7 +205,7 @@ The adapter translates at the boundary. It does not store a field named `id` in 
   - Unknown path returns **400**.
   - JSON null on a field is `$set` of null, not unset.
   - `id` / `_id` in the list are ignored.
-  - HTTP `validate` with `strict: true` rejects unknown key `$unset`. Use `strict: false`, skip validate, or call `adapter.patch` with a Hash.
+  - HTTP `validate` with `strict: true` skips reserved key `$unset`. It is not a schema field. Unknown real fields still return **422**.
 
 Path `ctx.id` is always the adapter. Bad hex is 404 / nil, not 422.
 
@@ -216,9 +217,9 @@ Apps may set `.str("id", format: :object_id)` (or another body field) so invalid
 
 `MongoAdapter#transaction` runs the block in one MongoDB transaction.
 
-You need a **replica set** or mongos. A standalone server raises `Alumna::MongoAdapter::TransactionError`.
+You need a **clustered** topology (replica set, mongos, or load-balanced). A standalone server raises `Alumna::MongoAdapter::TransactionError`.
 
-Connect with `replicaSet` in the URI:
+Connect with `replicaSet` in the URI, or use mongos / `loadBalanced=true`:
 
 ```crystal
 client = Mongo::Client.new("mongodb://127.0.0.1:27017/?replicaSet=rs0")
@@ -247,13 +248,46 @@ The last value of the block is what `#transaction` sees. A `ServiceError` aborts
 
 ---
 
-## 8. Change streams
+## 8. GridFS
+
+`MongoAdapter#grid_fs` configures an opt-in GridFS bucket.
+
+The helper exposes upload/download/delete/rename by file `id` (ObjectId hex `String`) or by filename where the driver supports it.
+
+File document fields returned from download and upload:
+
+`id`, `filename`, `length`, `chunkSize`, `uploadDate`, and optional `metadata` (`Hash(String, AnyData)`).
+
+Errors:
+
+* Invalid file id hex and missing files raise `Alumna::MongoAdapter::GridFSError` with `status 404`.
+* Other Mongo errors raise `Alumna::MongoAdapter::GridFSError` with `status 500`.
+
+Example:
+
+```crystal
+gridfs = products.grid_fs(bucket_name: "fs", chunk_size_bytes: 8_i32)
+
+upload = gridfs.open_upload_stream("file.txt", metadata: Alumna.hash(author: "Ada"))
+upload.io << "some bytes"
+upload.close
+
+dest = IO::Memory.new
+file = gridfs.download_to_stream(upload.id, dest)
+dest.rewind
+puts dest.gets_to_end
+
+gridfs.delete(upload.id)
+```
+
+---
+## 9. Change streams
 
 `MongoAdapter#watch` listens for inserts, updates, replaces, and deletes on this adapter’s collection.
 
-You need a **replica set** or mongos. A standalone server raises `Alumna::MongoAdapter::WatchError`.
+You need a **clustered** topology (replica set, mongos, or load-balanced). A standalone server raises `Alumna::MongoAdapter::WatchError`.
 
-Connect with `replicaSet` in the URI (same as transactions).
+Connect with `replicaSet` in the URI, or use mongos / `loadBalanced=true` (same as transactions).
 
 Events are `Hash(String, AnyData)` with snake_case keys:
 
@@ -297,11 +331,9 @@ Optional arguments: `resume_after` (Bytes), `max_await_time_ms`, `full_document`
 
 The collection should exist before `#watch`. Create one document first if you just dropped it.
 
-GitHub CI stays standalone `mongo:8.0`. Live watch specs skip unless `MONGODB_URI` includes `replicaSet=`.
-
 ---
 
-## 9. Testing
+## 10. Testing
 
 Use Alumna `AdapterSuite`. MongoDB ids are ObjectId hex, not `"1"`, `"2"`. Mixed `$sort` follows BSON, not SQLite.
 
@@ -332,13 +364,28 @@ Drop the collection in the factory. It runs inside every example.
 
 Pass `expect_incremental_ids: false` and `mixed_sort: :bson`. Do not use the sqlite/memory defaults.
 
-Specs use `ENV["MONGODB_URI"]? || "mongodb://127.0.0.1:27017"`. Default local and GitHub CI are standalone. No auth required for local tests.
+Specs use `ENV["MONGODB_URI"]? || "mongodb://127.0.0.1:27017"`. Set `MONGODB_URI` and `TOPOLOGY` **before** the process (`SHARED_CLIENT` is created at spec load). No auth required for local tests.
 
-`#transaction` live commit and abort examples, and `#watch` live insert/update/delete examples, need a replica set and skip unless `MONGODB_URI` includes `replicaSet=`. Standalone `#transaction` raises `TransactionError`. Standalone `#watch` raises `WatchError`. GitHub CI stays standalone `mongo:8.0`.
+`TOPOLOGY` is `standalone`, `replicaset`, `sharded`, or `load-balanced`. GitHub CI is the source of truth for that env. Local runs may omit it; then the suite looks at the URI (`replicaSet=` / `loadBalanced=true`) and hello.
+
+GitHub CI runs four topologies in parallel (`fail-fast: false`). Each cell starts MongoDB with cryomongo’s `docker-topology.sh` after `shards install` (`lib/cryomongo/scripts/docker-topology.sh`). Load-balanced also starts HAProxy. Coverage (kcov) stays one standalone job.
+
+- CRUD, indexes, AdapterSuite, and GridFS run on all four.
+- Live `#transaction` / `#watch` run when `clustered?` (replica set, sharded, or load-balanced). They skip on standalone.
+- Standalone-only “raises on standalone” examples run only when `standalone?`.
+- Do not skip CRUD or GridFS by topology.
+
+Example replica set run:
+
+```bash
+TOPOLOGY=replicaset MONGODB_URI='mongodb://127.0.0.1:27017/?replicaSet=rs0' crystal spec
+```
+
+Standalone `#transaction` raises `TransactionError`. Standalone `#watch` raises `WatchError`.
 
 ---
 
-## 10. Security
+## 11. Security
 
 There is no SQL. The adapter talks BSON to MongoDB.
 
@@ -352,6 +399,6 @@ Do not send passwords in error messages. Network and other Mongo errors become *
 
 ---
 
-## 11. License
+## 12. License
 
 MIT

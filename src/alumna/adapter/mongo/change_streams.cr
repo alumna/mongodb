@@ -6,7 +6,7 @@ class Alumna::MongoAdapter
 
   WATCH_STANDALONE_MESSAGE = "MongoDB change streams need a replica set. Standalone servers cannot run them."
 
-  # LCOV_EXCL_START - replica-set only; GitHub CI is standalone mongo:8.0
+  # LCOV_EXCL_START - clustered-only; coverage (kcov) stays one standalone job
 
   # Wrapper around a cryomongo change-stream cursor.
   # `#next` waits. `#try_next` polls. The caller must `#close` (or use the
@@ -108,7 +108,7 @@ class Alumna::MongoAdapter
     raise WatchError.new(WATCH_STANDALONE_MESSAGE)
   end
 
-  # LCOV_EXCL_START - replica-set only; GitHub CI is standalone mongo:8.0
+  # LCOV_EXCL_START - clustered-only; coverage (kcov) stays one standalone job
 
   private def iterate_watch(
     resume_after : Bytes?,
