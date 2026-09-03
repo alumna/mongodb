@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Added
+* `MongoAdapter#watch` for collection change streams.
+* Events are `Hash(String, AnyData)`:
+  `operation_type`, `resume_token` (Bytes),
+  `document_id`, `document_key`, `full_document`, `ns`.
+* Resume token is cloned BSON bytes.
+  Pass the same Bytes as `resume_after:`.
+* Block form closes the cursor in `ensure`.
+  The wrapper form has public `#close`.
+  `#next` waits. `#try_next` polls.
+* Replica set or mongos is required.
+  Standalone raises `WatchError`.
+
+### Changed
+* Live change-stream specs skip unless `MONGODB_URI` includes `replicaSet=`.
+  GitHub CI stays standalone `mongo:8.0`.
+
 ## 0.8.2 - 2026-09-03
 
 ### Added

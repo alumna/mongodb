@@ -7,7 +7,7 @@ MONGODB_URI   = ENV["MONGODB_URI"]? || "mongodb://127.0.0.1:27017"
 SHARED_CLIENT = Mongo::Client.new(MONGODB_URI)
 TEST_DB       = "alumna_test"
 
-# Live `#transaction` examples need a replica set. GitHub CI stays standalone.
+# Live `#transaction` and `#watch` examples need a replica set. GitHub CI stays standalone.
 def replica_set_uri? : Bool
   MONGODB_URI.includes?("replicaSet=")
 end
