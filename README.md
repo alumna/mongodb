@@ -13,9 +13,10 @@ MongoDB adapter for the [Alumna Backend Framework](https://github.com/alumna/bac
 4. [Querying and Filtering](#4-querying-and-filtering)
 5. [Indexes and Uniqueness](#5-indexes-and-uniqueness)
 6. [`id` vs `_id`](#6-id-vs-_id)
-7. [Testing](#7-testing)
-8. [Security](#8-security)
-9. [License](#9-license)
+7. [Transactions](#7-transactions)
+8. [Testing](#8-testing)
+9. [Security](#9-security)
+10. [License](#10-license)
 
 ---
 
@@ -208,7 +209,35 @@ Apps may set `.str("id", format: :object_id)` (or another body field) so invalid
 
 ---
 
-## 7. Testing
+## 7. Transactions
+
+`MongoAdapter#transaction` runs the block in one MongoDB transaction.
+
+Needs a **replica set** (or mongos). Standalone MongoDB cannot run transactions. The helper raises `Alumna::MongoAdapter::TransactionError` with a clear message.
+
+CRUD (`find`, `get`, `create`, `update`, `patch`, `remove`) on that fiber uses the session. You do not pass a session into Service methods.
+
+```crystal
+products.transaction do
+  created = products.create(create_ctx)
+  next created if created.is_a?(Alumna::ServiceError)
+  products.patch(patch_ctx)
+end
+```
+
+- If the block finishes, the adapter commits.
+- If the block returns `ServiceError`, the adapter aborts. Earlier writes in that block are not kept.
+- If the block raises, the adapter aborts and the exception continues.
+- Nested `#transaction` on the same fiber raises `TransactionError`.
+- `create_indexes!` does not join the transaction.
+
+Use `next` to return a value from the block. A `return` leaves the enclosing method.
+
+GitHub CI uses standalone `mongo:8.0`. Live transaction specs run only when `MONGODB_URI` includes `replicaSet=`.
+
+---
+
+## 8. Testing
 
 Use Alumna `AdapterSuite`. MongoDB ids are ObjectId hex, not `"1"`, `"2"`. Mixed `$sort` follows BSON, not SQLite.
 
@@ -239,11 +268,13 @@ Drop the collection in the factory. It runs inside every example.
 
 Pass `expect_incremental_ids: false` and `mixed_sort: :bson`. Do not use the sqlite/memory defaults.
 
-Specs use `ENV["MONGODB_URI"]? || "mongodb://127.0.0.1:27017"`. No replica set. No auth required for local tests.
+Specs use `ENV["MONGODB_URI"]? || "mongodb://127.0.0.1:27017"`. Default local and GitHub CI are standalone. No auth required for local tests.
+
+`#transaction` live commit and abort examples need a replica set. They skip unless `MONGODB_URI` includes `replicaSet=`. Standalone `#transaction` raises `TransactionError`. Do not change adapter GitHub CI to a replica set.
 
 ---
 
-## 8. Security
+## 9. Security
 
 There is no SQL. The adapter talks BSON to MongoDB.
 
@@ -257,6 +288,6 @@ Do not send passwords in error messages. Network and other Mongo errors become *
 
 ---
 
-## 9. License
+## 10. License
 
 MIT
