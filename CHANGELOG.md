@@ -1,18 +1,19 @@
 # Changelog
 
-## Unreleased
+## 0.8.2 - 2026-09-03
 
 ### Added
-* `MongoAdapter#transaction` runs the block in one MongoDB transaction.
-  CRUD on that fiber uses the session. You do not pass a session into Service methods.
-  Commit if the block returns. Abort if it raises or returns `ServiceError`.
-  Nested `#transaction` on the same fiber raises `TransactionError`.
-  Needs a replica set. Standalone raises `TransactionError` with a clear message.
-  Live commit/abort specs run only when `MONGODB_URI` includes `replicaSet=`.
-  GitHub CI stays standalone `mongo:8.0`.
+* `MongoAdapter#transaction` for one MongoDB transaction around existing CRUD.
+* CRUD on that fiber uses the session. You do not pass a session into Service methods.
+* The adapter commits if the block returns a value.
+* The adapter aborts if the block raises or returns `ServiceError`.
+* Nested `#transaction` on the same fiber raises `TransactionError`.
+* Replica set or mongos is required. Standalone raises `TransactionError`.
 
 ### Changed
-* CI comment: GitHub pin is alumna **~> 0.6.0** (adapter **0.8.1**).
+* CI comment: GitHub pin is alumna **~> 0.6.0**.
+* Live transaction specs skip unless `MONGODB_URI` includes `replicaSet=`.
+  GitHub CI stays standalone `mongo:8.0`.
 
 ## 0.8.1 - 2026-09-03
 

@@ -4,6 +4,8 @@
 
 MongoDB adapter for the [Alumna Backend Framework](https://github.com/alumna/backend). `Alumna::MongoAdapter` implements `Alumna::Service` against MongoDB 8.0.
 
+See [ROADMAP.md](ROADMAP.md) for what each version shipped and what is still open.
+
 ---
 
 ## Table of Contents
@@ -213,27 +215,34 @@ Apps may set `.str("id", format: :object_id)` (or another body field) so invalid
 
 `MongoAdapter#transaction` runs the block in one MongoDB transaction.
 
-Needs a **replica set** (or mongos). Standalone MongoDB cannot run transactions. The helper raises `Alumna::MongoAdapter::TransactionError` with a clear message.
+You need a **replica set** or mongos. A standalone server raises `Alumna::MongoAdapter::TransactionError`.
 
-CRUD (`find`, `get`, `create`, `update`, `patch`, `remove`) on that fiber uses the session. You do not pass a session into Service methods.
+Connect with `replicaSet` in the URI:
+
+```crystal
+client = Mongo::Client.new("mongodb://127.0.0.1:27017/?replicaSet=rs0")
+products = Alumna.mongo(client, "shop", "products", ProductSchema)
+```
+
+CRUD (`find`, `get`, `create`, `update`, `patch`, `remove`) on that fiber uses the session, so you do not pass a session into Service methods. Other fibers and other clients do not see those writes until commit.
 
 ```crystal
 products.transaction do
   created = products.create(create_ctx)
-  next created if created.is_a?(Alumna::ServiceError)
-  products.patch(patch_ctx)
+  if created.is_a?(Alumna::ServiceError)
+    created
+  else
+    products.patch(patch_ctx)
+  end
 end
 ```
 
-- If the block finishes, the adapter commits.
-- If the block returns `ServiceError`, the adapter aborts. Earlier writes in that block are not kept.
-- If the block raises, the adapter aborts and the exception continues.
+The last value of the block is what `#transaction` sees. A `ServiceError` aborts. Any other value commits.
+
+- The adapter aborts if the block raises, and the exception continues.
 - Nested `#transaction` on the same fiber raises `TransactionError`.
 - `create_indexes!` does not join the transaction.
-
-Use `next` to return a value from the block. A `return` leaves the enclosing method.
-
-GitHub CI uses standalone `mongo:8.0`. Live transaction specs run only when `MONGODB_URI` includes `replicaSet=`.
+- Do not use `return` inside the block. That leaves the enclosing method, so the adapter never sees the result.
 
 ---
 
@@ -270,7 +279,7 @@ Pass `expect_incremental_ids: false` and `mixed_sort: :bson`. Do not use the sql
 
 Specs use `ENV["MONGODB_URI"]? || "mongodb://127.0.0.1:27017"`. Default local and GitHub CI are standalone. No auth required for local tests.
 
-`#transaction` live commit and abort examples need a replica set. They skip unless `MONGODB_URI` includes `replicaSet=`. Standalone `#transaction` raises `TransactionError`. Do not change adapter GitHub CI to a replica set.
+`#transaction` live commit and abort examples need a replica set and skip unless `MONGODB_URI` includes `replicaSet=`. Standalone `#transaction` raises `TransactionError`. GitHub CI stays standalone `mongo:8.0`.
 
 ---
 
