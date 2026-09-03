@@ -22,7 +22,7 @@ end
 
 describe "MongoAdapter change streams" do
   it "raises a clear error on a standalone server" do
-    pending!("this process uses a replica set") if replica_set_uri?
+    pending!("this process uses a clustered topology") if clustered?
     adapter = mongo_adapter("wave17_standalone")
     expect_raises(Alumna::MongoAdapter::WatchError, /replica set/) do
       adapter.watch
@@ -30,7 +30,7 @@ describe "MongoAdapter change streams" do
   end
 
   it "raises on standalone for the block form" do
-    pending!("this process uses a replica set") if replica_set_uri?
+    pending!("this process uses a clustered topology") if clustered?
     adapter = mongo_adapter("wave17_standalone_block")
     expect_raises(Alumna::MongoAdapter::WatchError, /replica set/) do
       adapter.watch { }
@@ -38,7 +38,7 @@ describe "MongoAdapter change streams" do
   end
 
   it "does not put a URI password in the standalone watch error" do
-    pending!("this process uses a replica set") if replica_set_uri?
+    pending!("this process uses a clustered topology") if clustered?
     adapter = mongo_adapter("wave17_standalone_msg")
     message = ""
     begin
@@ -51,7 +51,7 @@ describe "MongoAdapter change streams" do
   end
 
   it "emits an insert event with mapped id and full document" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = seed_adapter("wave17_insert")
     stream = adapter.watch(max_await_time_ms: 500_i64)
     begin
@@ -80,7 +80,7 @@ describe "MongoAdapter change streams" do
   end
 
   it "emits an update event for patch" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = seed_adapter("wave17_update")
     created = as_hash(adapter.create(ctx(adapter, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Ada"))))
     id = created["id"].as(String)
@@ -101,7 +101,7 @@ describe "MongoAdapter change streams" do
   end
 
   it "emits a delete event for remove" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = seed_adapter("wave17_delete")
     created = as_hash(adapter.create(ctx(adapter, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Gone"))))
     id = created["id"].as(String)
@@ -118,7 +118,7 @@ describe "MongoAdapter change streams" do
   end
 
   it "resumes after a token and skips the earlier event" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = seed_adapter("wave17_resume")
     stream = adapter.watch(max_await_time_ms: 500_i64)
     token = Bytes.empty
@@ -151,7 +151,7 @@ describe "MongoAdapter change streams" do
   end
 
   it "try_next returns nil when idle" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = seed_adapter("wave17_idle")
     stream = adapter.watch(max_await_time_ms: 200_i64)
     begin
@@ -162,7 +162,7 @@ describe "MongoAdapter change streams" do
   end
 
   it "rejects a bad resume token with WatchError" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = seed_adapter("wave17_bad_token")
     expect_raises(Alumna::MongoAdapter::WatchError) do
       adapter.watch(resume_after: Bytes.new(1, 0_u8))
@@ -170,7 +170,7 @@ describe "MongoAdapter change streams" do
   end
 
   it "close is safe to call twice" do
-    pending!("needs replicaSet= in MONGODB_URI") unless replica_set_uri?
+    pending!("needs a clustered topology") unless clustered?
     adapter = seed_adapter("wave17_close")
     stream = adapter.watch(max_await_time_ms: 200_i64)
     stream.close

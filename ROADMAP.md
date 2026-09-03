@@ -1,10 +1,10 @@
 # Alumna MongoDB Adapter — roadmap
 
-What this adapter shipped, and what is still open. GitHub CI stays standalone `mongo:8.0`.
+What this adapter shipped, and what is still open. GitHub CI runs four MongoDB 8.0 topologies (standalone, replica set, sharded, load-balanced). Coverage (kcov) stays one standalone job.
 
 ## Delivered
 
-### Unreleased
+### 0.9.0 (2026-09-03)
 * Added `MongoAdapter#watch` (replica set or mongos).
 * Standalone `#watch` raises `WatchError`.
 * Resume token is cloned BSON **Bytes**. Pass it as `resume_after:`.
@@ -23,5 +23,5 @@ What this adapter shipped, and what is still open. GitHub CI stays standalone `m
 * GitHub CI and kcov 100% on `src/`.
 
 ## Next
-* GridFS.
-* Client-side encryption.
+* GridFS (driver already has the bucket API).
+* Client-side encryption (after cryomongo Phase 4 / `libmongocrypt`).

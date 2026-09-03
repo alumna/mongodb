@@ -40,7 +40,7 @@ class Alumna::MongoAdapter
     type.replica_set_with_primary? || type.replica_set_no_primary? || type.sharded? || type.load_balanced?
   end
 
-  # LCOV_EXCL_START - replica-set only; GitHub CI is standalone mongo:8.0
+  # LCOV_EXCL_START - clustered-only; coverage (kcov) stays one standalone job
 
   private def discover_topology : Nil
     @client.command(Mongo::Commands::Ping)
