@@ -20,12 +20,16 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# GitHub deps (D16): alumna ~> 0.6.0, cryomongo ~> 0.17.5 (bson.cr 0.9.2 via cryomongo).
+# GitHub deps: alumna >= 0.6.1, cryomongo >= 1.0.0-beta (bson.cr 0.9.3 via cryomongo).
 # Four topologies via cryomongo docker-topology.sh after shards install.
+# cryomongo 1.0.0-beta links vendored libmongocrypt and refuses to compile
+# when vendor/libmongocrypt is missing. Run the vendor script after shards install.
 # Adapter URIs have no auth. Do not set GLIBC_TUNABLES here; that tunable is
 # only a local workaround for kernel 7.1.x-zabbly+ (SERVER-121912).
 # Coverage (kcov) stays one standalone job. Do not use services: mongo:8.0
 # for clustered cells — a service container cannot start a replica set or mongos.
+# Live encryption specs run when mongo_crypt_v1.so is present. It is not on
+# these runners, so those examples skip. The auto-encryption file still compiles.
 
 jobs:
   lint:
@@ -70,6 +74,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-crystal-latest-shards-
       - run: shards install
+
+      - name: Vendor libmongocrypt
+        run: bash lib/cryomongo/scripts/vendor-libmongocrypt.sh
 
       # Clustered cells cannot use services: mongo:8.0. Standalone uses the
       # same script so 27017 is not bound twice.
@@ -143,6 +150,9 @@ jobs:
           key: ubuntu-22.04-crystal-latest-shards-${{ hashFiles('shard.yml') }}
 
       - run: shards install
+
+      - name: Vendor libmongocrypt
+        run: bash lib/cryomongo/scripts/vendor-libmongocrypt.sh
 
       - name: Build specs binary
         run: |

@@ -10,8 +10,9 @@ module Alumna
     collection : String,
     schema : Schema?,
     max_limit : Int32? = nil,
+    encryption : MongoAdapter::Encryption? = nil,
   )
-    MongoAdapter.new(client, database, collection, schema, max_limit)
+    MongoAdapter.new(client, database, collection, schema, max_limit, encryption)
   end
 
   def self.mongo(
@@ -20,9 +21,10 @@ module Alumna
     collection : String,
     schema : Schema?,
     max_limit : Int32? = nil,
+    encryption : MongoAdapter::Encryption? = nil,
     &
   )
-    svc = MongoAdapter.new(client, database, collection, schema, max_limit)
+    svc = MongoAdapter.new(client, database, collection, schema, max_limit, encryption)
     with svc yield
     svc
   end
