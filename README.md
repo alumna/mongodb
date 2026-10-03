@@ -341,7 +341,7 @@ Opt-in FLE1 encryption. Local KMS only. Service methods stay `find` / `get` / `c
 
 Marked fields are stored as BSON binary subtype `0x06`. With auto-decrypt they come back as plaintext (usually `String`). Do not encrypt `_id`. Schema is still required.
 
-Needs cryomongo **>= 1.0.0-beta** (`Mongo::AutoEncryption`), libmongocrypt, and crypt_shared (`mongo_crypt_v1.so`). The default cryomongo compile links the vendored library and stops if it is missing. Run `lib/cryomongo/scripts/vendor-libmongocrypt.sh` after `shards install`, or compile with `-Dwithout_libmongocrypt` when this adapter does not encrypt. GitHub CI vendors the library. Live encryption examples run when `mongo_crypt_v1.so` is present and skip when it is not.
+Needs cryomongo **>= 1.0.0-beta** (`Mongo::AutoEncryption`), libmongocrypt, and crypt_shared (`mongo_crypt_v1.so`). The default cryomongo compile links the vendored library and stops if it is missing. Run `lib/cryomongo/scripts/vendor-libmongocrypt.sh` after `shards install`, or compile with `-Dwithout_libmongocrypt` when this adapter does not encrypt. GitHub CI vendors the library and downloads `mongo_crypt_v1.so`, then runs the live encryption examples.
 
 ```crystal
 require "random/secure"
@@ -420,7 +420,7 @@ GitHub CI runs four topologies in parallel (`fail-fast: false`). Each cell start
 
 - CRUD, indexes, AdapterSuite, and GridFS run on all four.
 - Live `#transaction` / `#watch` run when `clustered?` (replica set, sharded, or load-balanced). They skip on standalone.
-- Live client-side encryption runs when libmongocrypt and crypt_shared are present. GitHub CI vendors libmongocrypt and skips those examples when `mongo_crypt_v1.so` is not on the runner.
+- Live client-side encryption runs when libmongocrypt and crypt_shared are present. GitHub CI downloads `mongo_crypt_v1.so` and runs those examples.
 - Standalone-only “raises on standalone” examples run only when `standalone?`.
 - Do not skip CRUD or GridFS by topology.
 

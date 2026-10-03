@@ -28,8 +28,8 @@ concurrency:
 # only a local workaround for kernel 7.1.x-zabbly+ (SERVER-121912).
 # Coverage (kcov) stays one standalone job. Do not use services: mongo:8.0
 # for clustered cells — a service container cannot start a replica set or mongos.
-# Live encryption specs run when mongo_crypt_v1.so is present. It is not on
-# these runners, so those examples skip. The auto-encryption file still compiles.
+# Live encryption needs crypt_shared. Download it after shards install and
+# export CRYPT_SHARED_LIB_PATH. The auto-encryption examples then run.
 
 jobs:
   lint:
@@ -91,6 +91,23 @@ jobs:
 
       - name: Vendor libmongocrypt
         run: bash lib/cryomongo/scripts/vendor-libmongocrypt.sh
+
+      - name: Cache crypt_shared
+        uses: actions/cache@v4
+        with:
+          path: lib/cryomongo/tmp/mongo_crypt_v1.so
+          key: crypt-shared-8.0.29-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Download crypt_shared
+        run: |
+          set -euo pipefail
+          bash lib/cryomongo/scripts/download-crypt-shared.sh
+          lib="${PWD}/lib/cryomongo/tmp/mongo_crypt_v1.so"
+          if [[ ! -f "$lib" ]]; then
+            echo "crypt_shared download did not write ${lib}" >&2
+            exit 1
+          fi
+          echo "CRYPT_SHARED_LIB_PATH=${lib}" >> "$GITHUB_ENV"
 
       # Clustered cells cannot use services: mongo:8.0. Standalone uses the
       # same script so 27017 is not bound twice.
@@ -171,6 +188,23 @@ jobs:
 
       - name: Vendor libmongocrypt
         run: bash lib/cryomongo/scripts/vendor-libmongocrypt.sh
+
+      - name: Cache crypt_shared
+        uses: actions/cache@v4
+        with:
+          path: lib/cryomongo/tmp/mongo_crypt_v1.so
+          key: crypt-shared-8.0.29-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Download crypt_shared
+        run: |
+          set -euo pipefail
+          bash lib/cryomongo/scripts/download-crypt-shared.sh
+          lib="${PWD}/lib/cryomongo/tmp/mongo_crypt_v1.so"
+          if [[ ! -f "$lib" ]]; then
+            echo "crypt_shared download did not write ${lib}" >&2
+            exit 1
+          fi
+          echo "CRYPT_SHARED_LIB_PATH=${lib}" >> "$GITHUB_ENV"
 
       - name: Build specs binary
         run: |

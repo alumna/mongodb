@@ -9,7 +9,7 @@
 * Stored values are BSON binary subtype `0x06`.
 * `#close` closes an adapter-owned auto-encryption client.
 * Specs skip when libmongocrypt or crypt_shared is missing.
-* Requires cryomongo **>= 1.0.0-beta**. That release has `Mongo::AutoEncryption`. GitHub CI vendors libmongocrypt so the adapter compiles. Live encryption examples run when `mongo_crypt_v1.so` is present.
+* Requires cryomongo **>= 1.0.0-beta**. That release has `Mongo::AutoEncryption`. GitHub CI vendors libmongocrypt and downloads `mongo_crypt_v1.so`, then runs the live encryption examples.
 
 ## 0.10.0 - 2026-09-03
 

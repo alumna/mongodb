@@ -7,7 +7,7 @@ What this adapter shipped, and what is still open. GitHub CI runs four MongoDB 8
 * Opt-in client-side encryption (FLE1, local KMS).
 * `encryption:` on `MongoAdapter.new` / `Alumna.mongo`.
 * Marked fields are plaintext AnyData after auto-decrypt. Storage is BSON binary `0x06`.
-* Requires cryomongo **>= 1.0.0-beta**. Live encryption runs when libmongocrypt and crypt_shared are present. GitHub CI vendors libmongocrypt and skips the live examples when `mongo_crypt_v1.so` is absent.
+* Requires cryomongo **>= 1.0.0-beta**. Live encryption runs when libmongocrypt and crypt_shared are present. GitHub CI vendors libmongocrypt, downloads `mongo_crypt_v1.so`, and runs those examples.
 
 ## Delivered
 

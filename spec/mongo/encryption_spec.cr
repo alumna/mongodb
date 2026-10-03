@@ -12,10 +12,17 @@ private def master_key : Bytes
 end
 
 private def spec_crypt_shared : String?
+  candidates = [] of String
   if p = ENV["CRYPT_SHARED_LIB_PATH"]?
-    return p if File.file?(p)
+    candidates << p
   end
-  {"/home/coghi/Projects/mongodb/cryomongo/tmp/mongo_crypt_v1.so", "/usr/local/lib/mongo_crypt_v1.so"}.each do |p|
+  # `shards install` puts cryomongo at lib/cryomongo. A path override is a
+  # symlink, so this is also the workbench copy. CI downloads the library there.
+  # One process can load only one crypt_shared path. Every live example below
+  # passes this same path.
+  candidates << File.expand_path("../../lib/cryomongo/tmp/mongo_crypt_v1.so", __DIR__)
+  candidates << "/usr/local/lib/mongo_crypt_v1.so"
+  candidates.each do |p|
     return p if File.file?(p)
   end
   nil
@@ -163,6 +170,7 @@ end
           key_vault_namespace: "#{TEST_DB}.wave26_enc_datakeys",
           local_master_key: key,
           fields: {"ssn" => "deterministic"},
+          crypt_shared_lib_path: shared,
         )
         adapter = Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_enc_people", enc_schema, encryption: enc)
         begin
@@ -227,6 +235,7 @@ end
             local_master_key: key,
             fields: {"ssn" => "deterministic"},
             uri: MONGODB_URI,
+            crypt_shared_lib_path: crypt,
           )
           adapter2 = Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_enc_reuse", enc_schema, encryption: again)
           got = as_hash(adapter2.get(ctx(adapter2, Alumna::ServiceMethod::Get, id: created["id"].as(String))))
@@ -265,6 +274,7 @@ end
             local_master_key: key,
             schema_map: map,
             uri: MONGODB_URI,
+            crypt_shared_lib_path: crypt,
           )
           mapped = Alumna.mongo(SHARED_CLIENT, TEST_DB, "wave26_enc_map", enc_schema, encryption: mapped_opts) do
             create_indexes!
@@ -294,7 +304,8 @@ end
       end
     else
       it "skips live encryption when libmongocrypt or crypt_shared is missing" do
-        (Mongo::ClientEncryption.lib_linked? && shared).should be_false
+        # `true && nil` is nil. A missing .so must count as "not ready".
+        (Mongo::ClientEncryption.lib_linked? && !shared.nil?).should be_false
       end
     end
   end
