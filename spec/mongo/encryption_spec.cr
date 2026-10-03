@@ -18,8 +18,9 @@ private def spec_crypt_shared : String?
   end
   # `shards install` puts cryomongo at lib/cryomongo. A path override is a
   # symlink, so this is also the workbench copy. CI downloads the library there.
-  # One process can load only one crypt_shared path. Every live example below
-  # passes this same path.
+  # One process can load only one crypt_shared path. Live examples pass this
+  # path, except the example that reads `CRYPT_SHARED_LIB_PATH` and requires
+  # that variable to be this same file.
   candidates << File.expand_path("../../lib/cryomongo/tmp/mongo_crypt_v1.so", __DIR__)
   candidates << "/usr/local/lib/mongo_crypt_v1.so"
   candidates.each do |p|
@@ -158,171 +159,216 @@ describe Alumna::MongoAdapter::Encryption do
   end
 end
 
-{% if Mongo.has_constant?("AutoEncryption") && Mongo.has_constant?("ClientEncryption") %}
-  describe "MongoAdapter client-side encryption" do
-    shared = spec_crypt_shared
-    if Mongo::ClientEncryption.lib_linked? && shared
-      it "creates and finds a marked field as plaintext; storage is 0x06" do
-        drop_collection("wave26_enc_people")
-        drop_collection("wave26_enc_datakeys")
-        key = master_key
-        enc = Alumna::MongoAdapter::Encryption.new(
-          key_vault_namespace: "#{TEST_DB}.wave26_enc_datakeys",
-          local_master_key: key,
-          fields: {"ssn" => "deterministic"},
-          crypt_shared_lib_path: shared,
-        )
-        adapter = Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_enc_people", enc_schema, encryption: enc)
-        begin
-          created = as_hash(adapter.create(ctx(adapter, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Ada", ssn: "123-45-6789"))))
-          created["ssn"].should eq("123-45-6789")
-          created["ssn"].should be_a(String)
-          created["name"].should eq("Ada")
-          id = created["id"].as(String)
-
-          got = as_hash(adapter.get(ctx(adapter, Alumna::ServiceMethod::Get, id: id)))
-          got["ssn"].should eq("123-45-6789")
-          got["name"].should eq("Ada")
-
-          found = as_list(adapter.find(ctx(adapter, Alumna::ServiceMethod::Find, params: {"name" => "Ada"})))
-          found.size.should eq(1)
-          found[0]["ssn"].should eq("123-45-6789")
-
-          oid = Alumna::MongoAdapter::Identity.parse?(id)
-          oid.should be_a(BSON::ObjectId)
-          if oid.is_a?(BSON::ObjectId)
-            raw = SHARED_CLIENT[TEST_DB]["wave26_enc_people"].find_one(Alumna::MongoAdapter::Identity.filter(oid))
-            raw.should_not be_nil
-            if stored = raw
-              ssn_encrypted?(stored).should be_true
-              stored["name"].should eq("Ada")
-            end
-          end
-        ensure
-          adapter.close
-          drop_collection("wave26_enc_people")
-          drop_collection("wave26_enc_datakeys")
-        end
+describe "MongoAdapter client-side encryption" do
+  shared = spec_crypt_shared
+  if Mongo::ClientEncryption.lib_linked? && shared
+    it "uses CRYPT_SHARED_LIB_PATH when no library path is passed" do
+      env_path = ENV["CRYPT_SHARED_LIB_PATH"]?
+      unless env_path && File.file?(env_path) && env_path == shared
+        pending! "CRYPT_SHARED_LIB_PATH must be the crypt_shared file this process loads"
       end
-
-      it "reuses a data key, accepts schema_map plus uri, and Alumna.mongo passes encryption" do
-        drop_collection("wave26_enc_reuse")
-        drop_collection("wave26_enc_map")
-        drop_collection("wave26_enc_reuse_keys")
-        key = master_key
-        vault = "#{TEST_DB}.wave26_enc_reuse_keys"
-        crypt = shared
-        unless crypt
-          raise "crypt_shared path missing"
-        end
-
-        first = Alumna::MongoAdapter::Encryption.new(
-          key_vault_namespace: vault,
-          local_master_key: key,
-          fields: {"ssn" => "deterministic"},
-          uri: "",
-          crypt_shared_lib_path: crypt,
-        )
-        adapter1 = Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_enc_reuse", enc_schema, encryption: first)
-        adapter2 = nil.as(Alumna::MongoAdapter?)
-        mapped = nil.as(Alumna::MongoAdapter?)
-        begin
-          created = as_hash(adapter1.create(ctx(adapter1, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Bob", ssn: "111-22-3333"))))
-          created["ssn"].should eq("111-22-3333")
-
-          again = Alumna::MongoAdapter::Encryption.new(
-            key_vault_namespace: vault,
-            local_master_key: key,
-            fields: {"ssn" => "deterministic"},
-            uri: MONGODB_URI,
-            crypt_shared_lib_path: crypt,
-          )
-          adapter2 = Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_enc_reuse", enc_schema, encryption: again)
-          got = as_hash(adapter2.get(ctx(adapter2, Alumna::ServiceMethod::Get, id: created["id"].as(String))))
-          got["ssn"].should eq("111-22-3333")
-
-          handle = Mongo::ClientEncryption.new(
-            SHARED_CLIENT,
-            key_vault_namespace: vault,
-            kms_providers: Alumna::MongoAdapter::Encryption.local_kms(key),
-          )
-          key_id = begin
-            docs = handle.get_keys
-            id = nil.as(BSON::Binary?)
-            docs.each do |doc|
-              doc.each do |k, value, _code, subtype|
-                next unless k == "_id"
-                case value
-                when UUID
-                  id = BSON::Binary.new(value)
-                when Bytes
-                  st = subtype || BSON::Binary::SubType::UUID
-                  id = BSON::Binary.new(st, value.clone)
-                end
-              end
-            end
-            id
-          ensure
-            handle.close
-          end
-          unless key_id
-            raise "expected a data key in the vault"
-          end
-          map = Alumna::MongoAdapter::Encryption.schema_map("#{TEST_DB}.wave26_enc_map", {"ssn" => Alumna::MongoAdapter::Encryption::ALGORITHM_DETERMINISTIC}, key_id)
-          mapped_opts = Alumna::MongoAdapter::Encryption.new(
-            key_vault_namespace: vault,
-            local_master_key: key,
-            schema_map: map,
-            uri: MONGODB_URI,
-            crypt_shared_lib_path: crypt,
-          )
-          mapped = Alumna.mongo(SHARED_CLIENT, TEST_DB, "wave26_enc_map", enc_schema, encryption: mapped_opts) do
-            create_indexes!
-          end
-          created_map = as_hash(mapped.create(ctx(mapped, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Cara", ssn: "999-88-7777"))))
-          created_map["ssn"].should eq("999-88-7777")
-        ensure
-          adapter1.close
-          adapter2.try(&.close)
-          mapped.try(&.close)
-          drop_collection("wave26_enc_reuse")
-          drop_collection("wave26_enc_map")
-          drop_collection("wave26_enc_reuse_keys")
-        end
-      end
-
-      it "raises EncryptionError when crypt_shared_lib_path is not a file" do
-        enc = Alumna::MongoAdapter::Encryption.new(
-          key_vault_namespace: "#{TEST_DB}.wave26_missing_crypt",
-          local_master_key: master_key,
-          fields: {"ssn" => "deterministic"},
-          crypt_shared_lib_path: "/no/such/mongo_crypt_v1.so",
-        )
-        expect_raises(Alumna::MongoAdapter::EncryptionError, /not found/) do
-          Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_missing_crypt", enc_schema, encryption: enc)
-        end
-      end
-    else
-      it "skips live encryption when libmongocrypt or crypt_shared is missing" do
-        # `true && nil` is nil. A missing .so must count as "not ready".
-        (Mongo::ClientEncryption.lib_linked? && !shared.nil?).should be_false
-      end
-    end
-  end
-{% else %}
-  describe "MongoAdapter client-side encryption without driver AutoEncryption" do
-    it "raises EncryptionError from the constructor" do
+      drop_collection("wave26_enc_env")
+      drop_collection("wave26_enc_env_keys")
       enc = Alumna::MongoAdapter::Encryption.new(
-        key_vault_namespace: "keyvault.datakeys",
+        key_vault_namespace: "#{TEST_DB}.wave26_enc_env_keys",
         local_master_key: master_key,
         fields: {"ssn" => "deterministic"},
       )
-      expect_raises(Alumna::MongoAdapter::EncryptionError, /auto-encryption/) do
-        Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_no_ae", enc_schema, encryption: enc)
-      end
-      expect_raises(Alumna::MongoAdapter::EncryptionError, /auto-encryption/) do
-        Alumna.mongo(SHARED_CLIENT, TEST_DB, "wave26_no_ae_helper", enc_schema, encryption: enc)
+      adapter = Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_enc_env", enc_schema, encryption: enc)
+      begin
+        created = as_hash(adapter.create(ctx(adapter, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Eve", ssn: "555-55-5555"))))
+        created["ssn"].should eq("555-55-5555")
+        got = as_hash(adapter.get(ctx(adapter, Alumna::ServiceMethod::Get, id: created["id"].as(String))))
+        got["ssn"].should eq("555-55-5555")
+      ensure
+        adapter.close
+        drop_collection("wave26_enc_env")
+        drop_collection("wave26_enc_env_keys")
       end
     end
+
+    # The false sides of the CRYPT_SHARED_LIB_PATH lookup. They stop before
+    # mongocrypt_init. If the host fallback file exists, that lookup would
+    # return it and this process would load a second crypt_shared.
+    it "raises when CRYPT_SHARED_LIB_PATH does not name a library and no host library is installed" do
+      fallback = "/usr/local/lib/mongo_crypt_v1.so"
+      if File.file?(fallback)
+        pending! "a host crypt_shared would be loaded as a second library"
+      end
+      saved = ENV["CRYPT_SHARED_LIB_PATH"]?
+      begin
+        ENV["CRYPT_SHARED_LIB_PATH"] = "/no/such/mongo_crypt_v1.so"
+        expect_raises(Alumna::MongoAdapter::EncryptionError, /crypt_shared/) do
+          enc = Alumna::MongoAdapter::Encryption.new(
+            key_vault_namespace: "#{TEST_DB}.wave26_enc_env_missing",
+            local_master_key: master_key,
+            fields: {"ssn" => "deterministic"},
+          )
+          Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_enc_env_missing", enc_schema, encryption: enc)
+        end
+
+        ENV.delete("CRYPT_SHARED_LIB_PATH")
+        expect_raises(Alumna::MongoAdapter::EncryptionError, /crypt_shared/) do
+          enc = Alumna::MongoAdapter::Encryption.new(
+            key_vault_namespace: "#{TEST_DB}.wave26_enc_env_unset",
+            local_master_key: master_key,
+            fields: {"ssn" => "deterministic"},
+          )
+          Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_enc_env_unset", enc_schema, encryption: enc)
+        end
+      ensure
+        if saved
+          ENV["CRYPT_SHARED_LIB_PATH"] = saved
+        else
+          ENV.delete("CRYPT_SHARED_LIB_PATH")
+        end
+      end
+    end
+
+    it "creates and finds a marked field as plaintext; storage is 0x06" do
+      drop_collection("wave26_enc_people")
+      drop_collection("wave26_enc_datakeys")
+      key = master_key
+      enc = Alumna::MongoAdapter::Encryption.new(
+        key_vault_namespace: "#{TEST_DB}.wave26_enc_datakeys",
+        local_master_key: key,
+        fields: {"ssn" => "deterministic"},
+        crypt_shared_lib_path: shared,
+      )
+      adapter = Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_enc_people", enc_schema, encryption: enc)
+      begin
+        created = as_hash(adapter.create(ctx(adapter, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Ada", ssn: "123-45-6789"))))
+        created["ssn"].should eq("123-45-6789")
+        created["ssn"].should be_a(String)
+        created["name"].should eq("Ada")
+        id = created["id"].as(String)
+
+        got = as_hash(adapter.get(ctx(adapter, Alumna::ServiceMethod::Get, id: id)))
+        got["ssn"].should eq("123-45-6789")
+        got["name"].should eq("Ada")
+
+        found = as_list(adapter.find(ctx(adapter, Alumna::ServiceMethod::Find, params: {"name" => "Ada"})))
+        found.size.should eq(1)
+        found[0]["ssn"].should eq("123-45-6789")
+
+        oid = Alumna::MongoAdapter::Identity.parse?(id)
+        oid.should be_a(BSON::ObjectId)
+        if oid.is_a?(BSON::ObjectId)
+          raw = SHARED_CLIENT[TEST_DB]["wave26_enc_people"].find_one(Alumna::MongoAdapter::Identity.filter(oid))
+          raw.should_not be_nil
+          if stored = raw
+            ssn_encrypted?(stored).should be_true
+            stored["name"].should eq("Ada")
+          end
+        end
+      ensure
+        adapter.close
+        drop_collection("wave26_enc_people")
+        drop_collection("wave26_enc_datakeys")
+      end
+    end
+
+    it "reuses a data key, accepts schema_map plus uri, and Alumna.mongo passes encryption" do
+      drop_collection("wave26_enc_reuse")
+      drop_collection("wave26_enc_map")
+      drop_collection("wave26_enc_reuse_keys")
+      key = master_key
+      vault = "#{TEST_DB}.wave26_enc_reuse_keys"
+      crypt = shared
+      unless crypt
+        raise "crypt_shared path missing"
+      end
+
+      first = Alumna::MongoAdapter::Encryption.new(
+        key_vault_namespace: vault,
+        local_master_key: key,
+        fields: {"ssn" => "deterministic"},
+        uri: "",
+        crypt_shared_lib_path: crypt,
+      )
+      adapter1 = Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_enc_reuse", enc_schema, encryption: first)
+      adapter2 = nil.as(Alumna::MongoAdapter?)
+      mapped = nil.as(Alumna::MongoAdapter?)
+      begin
+        created = as_hash(adapter1.create(ctx(adapter1, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Bob", ssn: "111-22-3333"))))
+        created["ssn"].should eq("111-22-3333")
+
+        again = Alumna::MongoAdapter::Encryption.new(
+          key_vault_namespace: vault,
+          local_master_key: key,
+          fields: {"ssn" => "deterministic"},
+          uri: MONGODB_URI,
+          crypt_shared_lib_path: crypt,
+        )
+        adapter2 = Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_enc_reuse", enc_schema, encryption: again)
+        got = as_hash(adapter2.get(ctx(adapter2, Alumna::ServiceMethod::Get, id: created["id"].as(String))))
+        got["ssn"].should eq("111-22-3333")
+
+        handle = Mongo::ClientEncryption.new(
+          SHARED_CLIENT,
+          key_vault_namespace: vault,
+          kms_providers: Alumna::MongoAdapter::Encryption.local_kms(key),
+        )
+        key_id = begin
+          docs = handle.get_keys
+          id = nil.as(BSON::Binary?)
+          docs.each do |doc|
+            doc.each do |k, value, _code, subtype|
+              next unless k == "_id"
+              case value
+              when UUID
+                id = BSON::Binary.new(value)
+              when Bytes
+                st = subtype || BSON::Binary::SubType::UUID
+                id = BSON::Binary.new(st, value.clone)
+              end
+            end
+          end
+          id
+        ensure
+          handle.close
+        end
+        unless key_id
+          raise "expected a data key in the vault"
+        end
+        map = Alumna::MongoAdapter::Encryption.schema_map("#{TEST_DB}.wave26_enc_map", {"ssn" => Alumna::MongoAdapter::Encryption::ALGORITHM_DETERMINISTIC}, key_id)
+        mapped_opts = Alumna::MongoAdapter::Encryption.new(
+          key_vault_namespace: vault,
+          local_master_key: key,
+          schema_map: map,
+          uri: MONGODB_URI,
+          crypt_shared_lib_path: crypt,
+        )
+        mapped = Alumna.mongo(SHARED_CLIENT, TEST_DB, "wave26_enc_map", enc_schema, encryption: mapped_opts) do
+          create_indexes!
+        end
+        created_map = as_hash(mapped.create(ctx(mapped, Alumna::ServiceMethod::Create, data: Alumna.hash(name: "Cara", ssn: "999-88-7777"))))
+        created_map["ssn"].should eq("999-88-7777")
+      ensure
+        adapter1.close
+        adapter2.try(&.close)
+        mapped.try(&.close)
+        drop_collection("wave26_enc_reuse")
+        drop_collection("wave26_enc_map")
+        drop_collection("wave26_enc_reuse_keys")
+      end
+    end
+
+    it "raises EncryptionError when crypt_shared_lib_path is not a file" do
+      enc = Alumna::MongoAdapter::Encryption.new(
+        key_vault_namespace: "#{TEST_DB}.wave26_missing_crypt",
+        local_master_key: master_key,
+        fields: {"ssn" => "deterministic"},
+        crypt_shared_lib_path: "/no/such/mongo_crypt_v1.so",
+      )
+      expect_raises(Alumna::MongoAdapter::EncryptionError, /not found/) do
+        Alumna::MongoAdapter.new(SHARED_CLIENT, TEST_DB, "wave26_missing_crypt", enc_schema, encryption: enc)
+      end
+    end
+  else
+    it "skips live encryption when libmongocrypt or crypt_shared is missing" do
+      # `true && nil` is nil. A missing .so must count as "not ready".
+      (Mongo::ClientEncryption.lib_linked? && !shared.nil?).should be_false
+    end
   end
-{% end %}
+end

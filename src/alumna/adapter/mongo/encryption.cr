@@ -11,10 +11,9 @@ class Alumna::MongoAdapter
   # subtype `0x06`. With auto-decrypt they come back as plaintext AnyData.
   # Do not encrypt `_id`. Schema is still required (D10).
   #
-  # cryomongo >= 1.0.0-beta defines `Mongo::AutoEncryption`. This type still
-  # compiles against an older driver: opening an adapter with `encryption:`
-  # then raises `EncryptionError`. Live encryption needs libmongocrypt and
-  # `CRYPT_SHARED_LIB_PATH` (`mongo_crypt_v1.so`).
+  # cryomongo >= 1.0.0-beta defines `Mongo::AutoEncryption`. Live encryption
+  # needs libmongocrypt and crypt_shared (`mongo_crypt_v1.so`), from
+  # `crypt_shared_lib_path` or `CRYPT_SHARED_LIB_PATH`.
   class Encryption
     LOCAL_KEY_BYTES = 96
 
@@ -122,32 +121,14 @@ class Alumna::MongoAdapter
     end
   end
 
-  MISSING_CSFLE = "Client-side encryption needs cryomongo with auto-encryption. Use the workbench driver or a tagged CSFLE release."
-
   # Close an adapter-owned auto-encryption client. No-op when the caller owns
   # the client (the usual `SHARED_CLIENT` / process client).
   def close : Nil
-    {% if Mongo.has_constant?("AutoEncryption") %}
-      if @owns_client
-        @owns_client = false
-        @client.close
-      end
-    {% else %}
+    if @owns_client
       @owns_client = false
-    {% end %}
-  end
-
-  {% if flag?(:alumna_csfle) && !Mongo.has_constant?("AutoEncryption") %}
-    {% raise "alumna_csfle needs cryomongo with Mongo::AutoEncryption (workbench path or a tagged CSFLE release)" %}
-  {% end %}
-end
-
-{% if Mongo.has_constant?("AutoEncryption") %}
-  require "./encryption_csfle"
-{% else %}
-  class Alumna::MongoAdapter
-    private def apply_encryption(_enc : Encryption) : Nil
-      raise EncryptionError.new(MISSING_CSFLE)
+      @client.close
     end
   end
-{% end %}
+end
+
+require "./encryption_csfle"

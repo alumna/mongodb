@@ -377,7 +377,7 @@ dependencies:
     path: ../cryomongo
 ```
 
-Do not commit `shard.override.yml`. Shards 0.20 can report ambiguous bson sources if you also add a bson path next to cryomongo’s github bson. Optional `-Dalumna_csfle` fails compile when `Mongo::AutoEncryption` is missing.
+Do not commit `shard.override.yml`. Shards 0.20 can report ambiguous bson sources if you also add a bson path next to cryomongo’s github bson.
 
 ---
 

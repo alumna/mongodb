@@ -1,5 +1,5 @@
-# Compiled when cryomongo defines `Mongo::AutoEncryption` (1.0.0-beta and later).
-# A cryomongo build without that constant does not load this file.
+# Auto-encryption implementation. cryomongo >= 1.0.0-beta defines
+# `Mongo::AutoEncryption`, so `encryption.cr` always loads this file.
 
 class Alumna::MongoAdapter
   private def apply_encryption(enc : Encryption) : Nil
@@ -58,7 +58,8 @@ class Alumna::MongoAdapter
     if p = Mongo::AutoEncryption.crypt_shared_lib_path
       return p if File.file?(p)
     end
-    # LCOV_EXCL_START - ENV path is set in live specs; fallback is this host's copy
+    # LCOV_EXCL_START - host copy, or the error when no library exists.
+    # Specs cover the explicit path and CRYPT_SHARED_LIB_PATH branches above.
     fallback = "/usr/local/lib/mongo_crypt_v1.so"
     return fallback if File.file?(fallback)
     raise EncryptionError.new("Client-side encryption needs crypt_shared (mongo_crypt_v1.so). Set CRYPT_SHARED_LIB_PATH.")

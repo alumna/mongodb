@@ -222,7 +222,7 @@ jobs:
 
       - name: Generate macro coverage
         run: |
-          crystal tool macro_code_coverage --format=codecov --no-color all_specs.cr > ./coverage/macro_coverage.root.codecov.json
+          crystal tool macro_code_coverage --format=codecov --no-color --exclude spec all_specs.cr > ./coverage/macro_coverage.root.codecov.json
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
