@@ -30,6 +30,9 @@ concurrency:
 # for clustered cells — a service container cannot start a replica set or mongos.
 # Live encryption needs crypt_shared. Download it after shards install and
 # export CRYPT_SHARED_LIB_PATH. The auto-encryption examples then run.
+# Cache the .so per runner image. ubuntu-latest stores the ubuntu2404 build
+# (glibc 2.38). The coverage job is ubuntu-22.04 and needs the ubuntu2204
+# build. The download script keeps whatever file is already on disk.
 
 jobs:
   lint:
@@ -96,7 +99,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: lib/cryomongo/tmp/mongo_crypt_v1.so
-          key: crypt-shared-8.0.29-${{ runner.os }}-${{ runner.arch }}
+          key: crypt-shared-8.0.29-ubuntu-latest-${{ runner.arch }}
 
       - name: Download crypt_shared
         run: |
@@ -193,7 +196,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: lib/cryomongo/tmp/mongo_crypt_v1.so
-          key: crypt-shared-8.0.29-${{ runner.os }}-${{ runner.arch }}
+          key: crypt-shared-8.0.29-ubuntu-22.04-${{ runner.arch }}
 
       - name: Download crypt_shared
         run: |
