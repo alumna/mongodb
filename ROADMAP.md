@@ -2,7 +2,19 @@
 
 What this adapter shipped, and what is still open. GitHub CI runs four MongoDB 8.0 topologies (standalone, replica set, sharded, load-balanced). Coverage (kcov) stays one standalone job.
 
+## Unreleased
+
+* Opt-in client-side encryption (FLE1, local KMS).
+* `encryption:` on `MongoAdapter.new` / `Alumna.mongo`.
+* Marked fields are plaintext AnyData after auto-decrypt. Storage is BSON binary `0x06`.
+* Requires cryomongo **>= 1.0.0-beta**. Live encryption runs when libmongocrypt and crypt_shared are present. GitHub CI vendors libmongocrypt, downloads `mongo_crypt_v1.so`, and runs those examples.
+
 ## Delivered
+
+### 0.10.0 (2026-09-03)
+* GridFS helpers (`#grid_fs`).
+* Four-topology GitHub CI (standalone, replica set, sharded, load-balanced).
+* Alumna backend **~> 0.6.1**.
 
 ### 0.9.0 (2026-09-03)
 * Added `MongoAdapter#watch` (replica set or mongos).
@@ -23,5 +35,6 @@ What this adapter shipped, and what is still open. GitHub CI runs four MongoDB 8
 * GitHub CI and kcov 100% on `src/`.
 
 ## Next
-* GridFS (driver already has the bucket API).
-* Client-side encryption (after cryomongo Phase 4 / `libmongocrypt`).
+* One GitHub release after CSFLE (human). Until then stay **0.10.0** Unreleased.
+* Cloud KMS for client-side encryption.
+* Adapter notes for `MONGODB-AWS` / `MONGODB-OIDC` when cryomongo implements those mechanisms (the URI may be enough).

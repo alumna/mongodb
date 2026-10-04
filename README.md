@@ -18,9 +18,10 @@ See [ROADMAP.md](ROADMAP.md) for what each version shipped and what is still ope
 7. [Transactions](#7-transactions)
 8. [GridFS](#8-gridfs)
 9. [Change streams](#9-change-streams)
-10. [Testing](#10-testing)
-11. [Security](#11-security)
-12. [License](#12-license)
+10. [Client-side encryption](#10-client-side-encryption)
+11. [Testing](#11-testing)
+12. [Security](#12-security)
+13. [License](#13-license)
 
 ---
 
@@ -78,6 +79,7 @@ app.listen(3000)
 - **`collection`** (`String`) - collection name inside that database. In the example, `"products"`.
 - **`schema`** (`Alumna::Schema`) - required. Field list, indexes, and typed filters. The adapter raises `ArgumentError` if this is missing.
 - **`max_limit`** (`Int32?`, default `nil`) - optional. When set, a client `$limit` above this value is clamped. `nil` means no adapter clamp. App `max_query_limit` may also clamp. The effective limit is the tighter of the two.
+- **`encryption`** (`Alumna::MongoAdapter::Encryption?`, default `nil`) - optional. See [Client-side encryption](#10-client-side-encryption).
 
 The block form yields `with svc` so you can mount rules:
 
@@ -333,7 +335,53 @@ The collection should exist before `#watch`. Create one document first if you ju
 
 ---
 
-## 10. Testing
+## 10. Client-side encryption
+
+Opt-in FLE1 encryption. Local KMS only. Service methods stay `find` / `get` / `create` / `update` / `patch` / `remove` with AnyData in and AnyData out.
+
+Marked fields are stored as BSON binary subtype `0x06`. With auto-decrypt they come back as plaintext (usually `String`). Do not encrypt `_id`. Schema is still required.
+
+Needs cryomongo **>= 1.0.0-beta** (`Mongo::AutoEncryption`), libmongocrypt, and crypt_shared (`mongo_crypt_v1.so`). The default cryomongo compile links the vendored library and stops if it is missing. Run `lib/cryomongo/scripts/vendor-libmongocrypt.sh` after `shards install`, or compile with `-Dwithout_libmongocrypt` when this adapter does not encrypt. GitHub CI vendors the library and downloads `mongo_crypt_v1.so`, then runs the live encryption examples.
+
+```crystal
+require "random/secure"
+
+key = Random::Secure.random_bytes(96) # keep this key
+
+people = Alumna.mongo(
+  client, "shop", "people", PeopleSchema,
+  encryption: Alumna::MongoAdapter::Encryption.new(
+    key_vault_namespace: "keyvault.datakeys",
+    local_master_key: key,
+    fields: {"ssn" => "deterministic"},
+  )
+)
+
+created = people.create(create_ctx) # ssn is plaintext String in the record
+people.close # closes the adapter-owned auto-encryption client
+```
+
+`fields` values are `"deterministic"` or `"random"` (or the full FLE1 algorithm string). You may pass `schema_map:` (a driver FLE1 BSON map) instead; it wins when set.
+
+The adapter opens a new `Mongo::Client` with auto-encryption. It rebuilds the URI from topology seeds, or uses `uri:` when you set it (needed if the URI has auth). If your client already has auto-encryption, omit `encryption:` and pass that client.
+
+Always call `#close` when the adapter owns the crypt client. Do not rely on GC `finalize`.
+
+Cloud KMS is not in this adapter. Queryable Encryption helpers are not in this adapter (standalone cannot create those collections).
+
+Live specs: set `CRYPT_SHARED_LIB_PATH` to `mongo_crypt_v1.so`. A gitignored `shard.override.yml` can point cryomongo at a local checkout:
+
+```yaml
+dependencies:
+  cryomongo:
+    path: ../cryomongo
+```
+
+Do not commit `shard.override.yml`. Shards 0.20 can report ambiguous bson sources if you also add a bson path next to cryomongo’s github bson.
+
+---
+
+## 11. Testing
 
 Use Alumna `AdapterSuite`. MongoDB ids are ObjectId hex, not `"1"`, `"2"`. Mixed `$sort` follows BSON, not SQLite.
 
@@ -372,6 +420,7 @@ GitHub CI runs four topologies in parallel (`fail-fast: false`). Each cell start
 
 - CRUD, indexes, AdapterSuite, and GridFS run on all four.
 - Live `#transaction` / `#watch` run when `clustered?` (replica set, sharded, or load-balanced). They skip on standalone.
+- Live client-side encryption runs when libmongocrypt and crypt_shared are present. GitHub CI downloads `mongo_crypt_v1.so` and runs those examples.
 - Standalone-only “raises on standalone” examples run only when `standalone?`.
 - Do not skip CRUD or GridFS by topology.
 
@@ -385,7 +434,7 @@ Standalone `#transaction` raises `TransactionError`. Standalone `#watch` raises 
 
 ---
 
-## 11. Security
+## 12. Security
 
 There is no SQL. The adapter talks BSON to MongoDB.
 
@@ -399,6 +448,6 @@ Do not send passwords in error messages. Network and other Mongo errors become *
 
 ---
 
-## 12. License
+## 13. License
 
 MIT

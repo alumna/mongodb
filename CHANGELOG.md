@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+* Opt-in client-side encryption (FLE1, local KMS).
+* `Alumna::MongoAdapter::Encryption` plus `encryption:` on `MongoAdapter.new` and `Alumna.mongo`.
+* Marked fields stay plaintext AnyData on create / get / find when auto-decrypt is on.
+* Stored values are BSON binary subtype `0x06`.
+* `#close` closes an adapter-owned auto-encryption client.
+* Specs skip when libmongocrypt or crypt_shared is missing.
+* Requires cryomongo **>= 1.0.0-beta**. That release has `Mongo::AutoEncryption`. GitHub CI vendors libmongocrypt and downloads `mongo_crypt_v1.so`, then runs the live encryption examples.
+
 ## 0.10.0 - 2026-09-03
 
 ### Added
@@ -10,13 +21,15 @@
 * Missing files raise `MongoAdapter::GridFSError` with `status 404`. Other Mongo errors map to `status 500`.
 
 ### Changed
+* Alumna backend **~> 0.6.1**.
 * **docs:** HTTP `validate` with `strict: true` skips reserved `"$unset"`. Unknown real fields still return **422**.
 * GitHub CI matrix (`fail-fast: false`) runs four MongoDB 8.0 topologies:
   * standalone,
   * replica set,
   * sharded,
   * load-balanced.
-* Coverage (kcov) stays one standalone job. `format --check` runs once in a lint job.
+* All four topology jobs passed. Coverage (kcov) stays one standalone job (100%).
+  `format --check` runs once in a lint job.
 * Specs use `TOPOLOGY` plus URI / hello (`standalone?` / `clustered?`).
   Live `#transaction` / `#watch` run on clustered cells.
   Standalone-only examples skip when clustered.

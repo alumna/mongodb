@@ -15,6 +15,8 @@ module Alumna
     @unique_fields : Array({String, FieldDescriptor})
     @index_models : Array(BSON)
     @index_names : Hash(String, String)
+    # True when `#close` must close `@client` (adapter-owned auto-encryption client).
+    @owns_client : Bool
 
     # Shared empty `$unset` list when the patch has no `$unset` key (D34).
     EMPTY_UNSET = [] of String
@@ -25,6 +27,7 @@ module Alumna
       collection : String,
       schema : Schema? = nil,
       max_limit : Int32? = nil,
+      encryption : Encryption? = nil,
     )
       raise ArgumentError.new("MongoAdapter requires a Schema") unless schema
 
@@ -39,6 +42,10 @@ module Alumna
       @max_limit = max_limit
       @unique_fields = schema.unique_fields
       @index_models, @index_names = Indexes.prepare(collection, schema)
+      @owns_client = false
+      if enc = encryption
+        apply_encryption(enc)
+      end
     end
 
     def find(ctx : RuleContext) : Array(Hash(String, AnyData)) | ServiceError
@@ -327,3 +334,4 @@ require "./mongo/errors"
 require "./mongo/transactions"
 require "./mongo/change_streams"
 require "./mongo/gridfs"
+require "./mongo/encryption"

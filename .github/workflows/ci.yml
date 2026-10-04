@@ -20,21 +20,35 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# GitHub deps (D16): alumna ~> 0.6.0, cryomongo ~> 0.17.5 (bson.cr 0.9.2 via cryomongo).
+# GitHub deps: alumna >= 0.6.1, cryomongo >= 1.0.0-beta (bson.cr 0.9.3 via cryomongo).
 # Four topologies via cryomongo docker-topology.sh after shards install.
+# cryomongo 1.0.0-beta links vendored libmongocrypt and refuses to compile
+# when vendor/libmongocrypt is missing. Run the vendor script after shards install.
 # Adapter URIs have no auth. Do not set GLIBC_TUNABLES here; that tunable is
 # only a local workaround for kernel 7.1.x-zabbly+ (SERVER-121912).
 # Coverage (kcov) stays one standalone job. Do not use services: mongo:8.0
 # for clustered cells — a service container cannot start a replica set or mongos.
+# Live encryption needs crypt_shared. Download it after shards install and
+# export CRYPT_SHARED_LIB_PATH. The auto-encryption examples then run.
+# Cache the .so per runner image. ubuntu-latest stores the ubuntu2404 build
+# (glibc 2.38). The coverage job is ubuntu-22.04 and needs the ubuntu2204
+# build. The download script keeps whatever file is already on disk.
 
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: crystal-lang/install-crystal@v1
+      - name: Force apt update
+        run: sudo -n apt-get update
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
         with:
           crystal: latest
+
       - run: crystal tool format --check
 
   test:
@@ -56,10 +70,17 @@ jobs:
       TOPOLOGY: ${{ matrix.topology }}
       MONGODB_URI: ${{ matrix.uri }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: crystal-lang/install-crystal@v1
+      - name: Force apt update
+        run: sudo -n apt-get update
+
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
         with:
           crystal: latest
+
       - uses: actions/cache@v4
         with:
           path: |
@@ -70,6 +91,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-crystal-latest-shards-
       - run: shards install
+
+      - name: Vendor libmongocrypt
+        run: bash lib/cryomongo/scripts/vendor-libmongocrypt.sh
+
+      - name: Cache crypt_shared
+        uses: actions/cache@v4
+        with:
+          path: lib/cryomongo/tmp/mongo_crypt_v1.so
+          key: crypt-shared-8.0.29-ubuntu-latest-${{ runner.arch }}
+
+      - name: Download crypt_shared
+        run: |
+          set -euo pipefail
+          bash lib/cryomongo/scripts/download-crypt-shared.sh
+          lib="${PWD}/lib/cryomongo/tmp/mongo_crypt_v1.so"
+          if [[ ! -f "$lib" ]]; then
+            echo "crypt_shared download did not write ${lib}" >&2
+            exit 1
+          fi
+          echo "CRYPT_SHARED_LIB_PATH=${lib}" >> "$GITHUB_ENV"
 
       # Clustered cells cannot use services: mongo:8.0. Standalone uses the
       # same script so 27017 is not bound twice.
@@ -122,11 +163,15 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      - name: Force apt update
+        run: sudo -n apt-get update
+
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: crystal-lang/install-crystal@v1
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
         with:
           crystal: latest
 
@@ -144,6 +189,26 @@ jobs:
 
       - run: shards install
 
+      - name: Vendor libmongocrypt
+        run: bash lib/cryomongo/scripts/vendor-libmongocrypt.sh
+
+      - name: Cache crypt_shared
+        uses: actions/cache@v4
+        with:
+          path: lib/cryomongo/tmp/mongo_crypt_v1.so
+          key: crypt-shared-8.0.29-ubuntu-22.04-${{ runner.arch }}
+
+      - name: Download crypt_shared
+        run: |
+          set -euo pipefail
+          bash lib/cryomongo/scripts/download-crypt-shared.sh
+          lib="${PWD}/lib/cryomongo/tmp/mongo_crypt_v1.so"
+          if [[ ! -f "$lib" ]]; then
+            echo "crypt_shared download did not write ${lib}" >&2
+            exit 1
+          fi
+          echo "CRYPT_SHARED_LIB_PATH=${lib}" >> "$GITHUB_ENV"
+
       - name: Build specs binary
         run: |
           echo 'require "./spec/**"' > all_specs.cr
@@ -160,7 +225,7 @@ jobs:
 
       - name: Generate macro coverage
         run: |
-          crystal tool macro_code_coverage --format=codecov --no-color all_specs.cr > ./coverage/macro_coverage.root.codecov.json
+          crystal tool macro_code_coverage --format=codecov --no-color --exclude spec all_specs.cr > ./coverage/macro_coverage.root.codecov.json
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
