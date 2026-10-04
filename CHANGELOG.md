@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.0-beta - 2026-10-04
 
 ### Added
 * Opt-in client-side encryption (FLE1, local KMS).
