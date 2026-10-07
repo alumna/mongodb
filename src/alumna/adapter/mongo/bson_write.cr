@@ -3,7 +3,7 @@ class Alumna::MongoAdapter
   # helpers (same IO). Pre-size the top-level builder IO from known size.
   module BsonWrite
     def self.document(oid : BSON::ObjectId, data : Hash(String, AnyData)) : BSON
-      build(data.size * 16 + 22) do |bson|
+      build(document_bytes(data)) do |bson|
         bson["_id"] = oid
         data.each do |key, value|
           next if key == "id" || key == "_id"
@@ -19,8 +19,7 @@ class Alumna::MongoAdapter
     # Omit `$set` when *has_set* is false. Omit `$unset` when *unset_paths* is empty.
     # `$unset` values are empty strings (MongoDB ignores the value).
     def self.update_document(data : Hash(String, AnyData), unset_paths : Array(String), has_set : Bool) : BSON
-      cap = (data.size + unset_paths.size) * 16 + 32
-      build(cap) do |bson|
+      build(update_bytes(data, unset_paths, has_set)) do |bson|
         if has_set
           bson.document("$set") do
             data.each do |key, value|
@@ -69,12 +68,87 @@ class Alumna::MongoAdapter
       end
     end
 
-    # Same as BSON.build, but the IO buffer starts at *byte_cap* (min 64, the Builder default).
+    # *byte_cap* is the full document size (header included). The builder
+    # buffer is that size, so to_bson does not allocate a second copy.
     private def self.build(byte_cap : Int32, &) : BSON
-      cap = byte_cap < 64 ? 64 : byte_cap
-      builder = BSON::Builder.new(IO::Memory.new(cap))
+      cap = byte_cap < 5 ? 5 : byte_cap
+      builder = BSON::Builder.new(cap)
       yield builder
-      BSON.view(builder.to_bson)
+      doc = BSON.view(builder.to_bson)
+      {% unless flag?(:release) %}
+        if doc.size != cap
+          raise BSON::Error.new("BSON size estimate #{cap} != #{doc.size}")
+        end
+      {% end %}
+      doc
+    end
+
+    # Header (5) plus `_id` (17) plus each stored field.
+    private def self.document_bytes(data : Hash(String, AnyData)) : Int32
+      total = 22
+      data.each do |key, value|
+        next if key == "id" || key == "_id"
+        total += 2 + key.bytesize + value_bytes(value)
+      end
+      total
+    end
+
+    private def self.update_bytes(data : Hash(String, AnyData), unset_paths : Array(String), has_set : Bool) : Int32
+      total = 5
+      if has_set
+        nested = 5
+        data.each do |key, value|
+          next if key == "id" || key == "_id"
+          nested += 2 + key.bytesize + value_bytes(value)
+        end
+        total += 6 + nested # type + "$set" + NUL + nested document
+      end
+      unless unset_paths.empty?
+        nested = 5
+        unset_paths.each do |path|
+          nested += 2 + path.bytesize + 5 # empty string payload
+        end
+        total += 8 + nested # type + "$unset" + NUL + nested document
+      end
+      total
+    end
+
+    private def self.value_bytes(value : AnyData) : Int32
+      case value
+      when Nil
+        0
+      when Bool
+        1
+      when Int64, Float64, Time
+        8
+      when String
+        5 + value.bytesize
+      when Bytes
+        5 + value.size
+      when Hash
+        hash_bytes(value)
+      when Array
+        array_bytes(value)
+      else
+        raise BSON::Error.new("Unsupported AnyData in BSON size estimate")
+      end
+    end
+
+    private def self.hash_bytes(data : Hash(String, AnyData)) : Int32
+      total = 5
+      data.each do |key, value|
+        total += 2 + key.bytesize + value_bytes(value)
+      end
+      total
+    end
+
+    private def self.array_bytes(items : Array(AnyData)) : Int32
+      total = 5
+      items.each_with_index do |item, index|
+        key = index < 128 ? BSON::Builder::STATIC_INDICES.unsafe_fetch(index) : index.to_s
+        total += 2 + key.bytesize + value_bytes(item)
+      end
+      total
     end
   end
 end
