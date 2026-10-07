@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Performance
+* **write:** Create and patch documents allocate one buffer sized from the AnyData values. The old `field count * 16` hint grew, then copied into a second buffer.
+
 ## 1.0.0-beta - 2026-10-04
 
 ### Added

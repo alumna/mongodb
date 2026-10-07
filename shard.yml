@@ -4,10 +4,10 @@ version: 1.0.0-beta
 dependencies:
   alumna:
     github: alumna/backend
-    version: ">= 0.6.1"
+    version: ">= 0.10.1"
   cryomongo:
     github: alumna/cryomongo
-    version: ">= 1.0.0-beta"
+    version: ">= 1.0.0"
 
 authors:
   - Paulo Coghi <paulo@airsailer.io>
