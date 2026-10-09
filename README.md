@@ -172,6 +172,7 @@ The adapter writes only the AnyData types in the first table. The extra rows are
 | `create` | the record, with a new hex `id` | incoming `id` / `_id` are ignored |
 | `update` | the replaced record | nil id → 400. Invalid hex or no document → 404. |
 | `patch` | the patched record | nil id → 400. Invalid hex or no document → 404. |
+| `patch_where` | the patched record | nil id → 400. Invalid hex, no document, or matched count 0 → 404. |
 | `remove` | `nil` | nil id → 400. Invalid hex or no document → 404. |
 
 Mongo command failures on these methods return `Alumna::ServiceError`. They do not raise. See [Errors](#11-errors).
@@ -179,6 +180,8 @@ Mongo command failures on these methods return `Alumna::ServiceError`. They do n
 `update` replaces the document. A body key that contains `.` returns **400**. Replace is a document, not a path update.
 
 `patch` sends `$set` of the body. `id` / `_id` are ignored.
+
+`patch_where(ctx, equals)` is one update. The filter is `_id` plus each pair in `equals`. A matched count of 0 writes nothing and returns **404**. The reply field `n` is that count. It is not the modified count. An empty `equals` is **400**. `id` and `_id` are not match fields. An unknown field is **400**. `$set` and `$unset` follow the same rules as `patch`. The method does not name a product or a status value.
 
 ### Calling a method from Crystal
 

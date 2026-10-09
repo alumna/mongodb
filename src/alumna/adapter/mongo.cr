@@ -151,6 +151,42 @@ module Alumna
       record
     end
 
+    # One update. The filter is `_id` plus each equality in *equals*.
+    # A matched count of 0 writes nothing and returns 404.
+    # `n` on the update reply is the matched count, not the modified count.
+    # Empty *equals* is 400. `id` and `_id` are not match fields.
+    # An unknown field is 400. This method does not know about a product.
+    def patch_where(ctx : RuleContext, equals : Hash(String, AnyData)) : Hash(String, AnyData) | ServiceError
+      return ServiceError.bad_request("Match is empty") if equals.empty?
+      if err = match_key_error(equals)
+        return err
+      end
+
+      raw_id = ctx.id
+      return ServiceError.bad_request("ID required for patch") unless raw_id
+
+      unset_paths = take_unset_paths(ctx.data)
+      return unset_paths if unset_paths.is_a?(ServiceError)
+
+      if err = patch_key_error(ctx.data)
+        return err
+      end
+      oid = Identity.parse?(raw_id)
+      return ServiceError.not_found unless oid
+
+      filter = BsonWrite.document(oid, equals)
+      has_set = has_write_keys?(ctx.data)
+      if unset_paths.empty? && !has_set
+        return read_match(filter)
+      end
+
+      update_doc = BsonWrite.update_document(ctx.data, unset_paths, has_set)
+      result = mongo { |session| @collection.update_one(filter, update_doc, session: session) }
+      return result if result.is_a?(ServiceError)
+      return ServiceError.not_found if matched_zero?(result)
+      read_match(Identity.filter(oid))
+    end
+
     def remove(ctx : RuleContext) : Nil | ServiceError
       raw_id = ctx.id
       return ServiceError.bad_request("ID required for remove") unless raw_id
@@ -308,6 +344,23 @@ module Alumna
           return
         end
       end
+    end
+
+    # Read the document that *filter* selects. No document is 404.
+    private def read_match(filter : BSON) : Hash(String, AnyData) | ServiceError
+      existing_doc = mongo { |session| @collection.find_one(filter, session: session) }
+      return existing_doc if existing_doc.is_a?(ServiceError)
+      return ServiceError.not_found unless existing_doc
+      BsonRead.to_record(existing_doc, @field_count)
+    end
+
+    # `id` and `_id` would be dropped from the filter and the match would be weaker.
+    private def match_key_error(equals : Hash(String, AnyData)) : ServiceError?
+      equals.each_key do |key|
+        return ServiceError.bad_request("Match field is not allowed") if key == "id" || key == "_id"
+        return ServiceError.bad_request("Unknown match field: #{key}") unless @sch.find_field(key)
+      end
+      nil
     end
 
     private def has_write_keys?(data : Hash(String, AnyData)) : Bool
