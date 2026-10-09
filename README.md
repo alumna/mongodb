@@ -2,7 +2,7 @@
 
 [![Crystal CI](https://github.com/alumna/mongodb/actions/workflows/ci.yml/badge.svg)](https://github.com/alumna/mongodb/actions/workflows/ci.yml) [![codecov](https://codecov.io/github/alumna/mongodb/graph/badge.svg?token=dFAHQ7KKzO)](https://codecov.io/github/alumna/mongodb) ![Dynamic YAML Badge](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fraw.githubusercontent.com%2Falumna%2Fmongodb%2Frefs%2Fheads%2Fmaster%2Fshard.yml&query=version&prefix=v&label=version) ![GitHub License](https://img.shields.io/github/license/alumna/mongodb)
 
-MongoDB adapter for the [Alumna Backend](https://github.com/alumna/backend). `Alumna::MongoAdapter` implements `Alumna::Service` against MongoDB 8.0, through [cryomongo](https://github.com/alumna/cryomongo) 1.0.0-beta.
+MongoDB adapter for the [Alumna Backend](https://github.com/alumna/backend). `Alumna::MongoAdapter` implements `Alumna::Service` against MongoDB 8.0, through [cryomongo](https://github.com/alumna/cryomongo).
 
 Records are Alumna `AnyData` in the service and BSON in MongoDB. The adapter is the only place that converts between them.
 

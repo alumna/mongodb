@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 - 2026-10-10
 
 ### Added
 * `MongoAdapter#patch_where(ctx, equals)` updates one document only when `_id` and each equality match. A matched count of 0 writes nothing and returns 404. `n` is the matched count. Empty `equals`, `id`, `_id`, and an unknown field are 400.
