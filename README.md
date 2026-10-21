@@ -629,7 +629,7 @@ Set `MONGODB_URI` and `TOPOLOGY` before the process starts. `SHARED_CLIENT` is c
 
 `TOPOLOGY` is `standalone`, `replicaset`, `sharded`, or `load-balanced`. If it is unset, the suite reads the URI (`replicaSet=` / `loadBalanced=true`) and then `hello`.
 
-GitHub CI runs those four topologies in parallel (`fail-fast: false`). Each cell starts MongoDB with `lib/cryomongo/scripts/docker-topology.sh` after `shards install`. Load-balanced also starts HAProxy. Coverage (kcov) is one standalone job, and it covers `src/` at 100%. The workflow vendors libmongocrypt, downloads `mongo_crypt_v1.so`, and runs the live encryption examples. The coverage job is Ubuntu 24.04. It starts standalone MongoDB with the same `docker-topology.sh` as the other jobs, so the container gets `GLIBC_TUNABLES=glibc.pthread.rseq=1`. Every job uses the `ubuntu2404` crypt_shared build.
+GitHub CI runs those four topologies in parallel (`fail-fast: false`). Each cell starts MongoDB with `lib/cryomongo/scripts/docker-topology.sh` after `shards install`. Load-balanced also starts HAProxy. Coverage (kcov) is one standalone job, and it covers `src/` at 100%. The workflow vendors libmongocrypt, downloads `mongo_crypt_v1.so`, and runs the live encryption examples. The coverage job is Ubuntu 24.04. It starts standalone MongoDB with the same `docker-topology.sh` as the other jobs, so the container gets `GLIBC_TUNABLES=glibc.pthread.rseq=1`. Every job uses the `ubuntu2604` crypt_shared build.
 
 - CRUD, indexes, AdapterSuite, and GridFS run on all four.
 - `#transaction` and `#watch` run when the topology is clustered. They skip on standalone.
