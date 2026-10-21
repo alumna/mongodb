@@ -24,15 +24,18 @@ concurrency:
 # Four topologies via cryomongo docker-topology.sh after shards install.
 # cryomongo 1.0.0-beta links vendored libmongocrypt and refuses to compile
 # when vendor/libmongocrypt is missing. Run the vendor script after shards install.
-# Adapter URIs have no auth. Do not set GLIBC_TUNABLES here; that tunable is
-# only a local workaround for kernel 7.1.x-zabbly+ (SERVER-121912).
-# Coverage (kcov) stays one standalone job. Do not use services: mongo:8.0
-# for clustered cells — a service container cannot start a replica set or mongos.
+# Adapter URIs have no auth. Every MongoDB container is started by
+# docker-topology.sh, which sets GLIBC_TUNABLES=glibc.pthread.rseq=1
+# (SERVER-121912). Do not start mongo:8.0 with services:. That container
+# does not get the tunable, and MongoDB exits 12257600 on kernel 6.19+.
+# Coverage (kcov) stays one standalone job on ubuntu-24.04. Crystal latest
+# links glibc 2.38 (__isoc23_strtoul), so ubuntu-22.04 cannot build it.
+# ubuntu-26.04 dropped PCRE1, so crystal-lang/install-crystal@v1 does not
+# install there. A service container also cannot start a replica set or mongos.
 # Live encryption needs crypt_shared. Download it after shards install and
 # export CRYPT_SHARED_LIB_PATH. The auto-encryption examples then run.
-# Cache the .so per runner image. ubuntu-latest stores the ubuntu2404 build
-# (glibc 2.38). The coverage job is ubuntu-22.04 and needs the ubuntu2204
-# build. The download script keeps whatever file is already on disk.
+# Cache the .so per runner image. ubuntu-24.04 stores the ubuntu2404 build
+# (glibc 2.38). The download script keeps whatever file is already on disk.
 
 jobs:
   lint:
@@ -152,16 +155,6 @@ jobs:
     env:
       TOPOLOGY: standalone
       MONGODB_URI: mongodb://127.0.0.1:27017
-    services:
-      mongodb:
-        image: mongo:8.0
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })' --quiet"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
     steps:
       - name: Force apt update
         run: sudo -n apt-get update
@@ -185,7 +178,7 @@ jobs:
           path: |
             lib
             ~/.cache/shards
-          key: ubuntu-22.04-crystal-latest-shards-${{ hashFiles('shard.yml') }}
+          key: ubuntu-24.04-crystal-latest-shards-${{ hashFiles('shard.yml') }}
 
       - run: shards install
 
@@ -196,7 +189,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: lib/cryomongo/tmp/mongo_crypt_v1.so
-          key: crypt-shared-8.0.29-ubuntu-22.04-${{ runner.arch }}
+          key: crypt-shared-8.0.29-ubuntu-24.04-${{ runner.arch }}
 
       - name: Download crypt_shared
         run: |
@@ -208,6 +201,19 @@ jobs:
             exit 1
           fi
           echo "CRYPT_SHARED_LIB_PATH=${lib}" >> "$GITHUB_ENV"
+
+      # Same standalone start as the topology job. The script sets
+      # GLIBC_TUNABLES=glibc.pthread.rseq=1 so mongo:8.0 survives kernel 6.19+.
+      - name: Start MongoDB standalone
+        run: |
+          set -euo pipefail
+          script="lib/cryomongo/scripts/docker-topology.sh"
+          if [[ ! -f "$script" ]]; then
+            echo "missing $script after shards install" >&2
+            ls -la lib/cryomongo/scripts 2>/dev/null || true
+            exit 1
+          fi
+          bash "$script" standalone
 
       - name: Build specs binary
         run: |

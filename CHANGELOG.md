@@ -7,6 +7,7 @@
 
 ### Changed
 * Requires Alumna **>= 0.13.0**.
+* Coverage CI is Ubuntu 24.04 and starts standalone MongoDB with `docker-topology.sh`. A GitHub `services: mongo:8.0` container does not receive `GLIBC_TUNABLES=glibc.pthread.rseq=1`, so MongoDB 8.0 exits on kernel 6.19+. Ubuntu 22.04 cannot link Crystal latest (`__isoc23_strtoul`).
 
 ## 1.1.0 - 2026-10-10
 
