@@ -145,7 +145,7 @@ jobs:
         run: crystal spec -Dpreview_mt -Dexecution_context --error-trace --verbose
 
   coverage:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
