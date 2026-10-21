@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.2.0 - 2026-10-21
+
+### Added
+* `partial: true` on a unique field or a unique `schema.index` writes `partialFilterExpression`. The filter is `$type` `string`, `long`, `bool`, `date`, or `binData` for each key. Missing and BSON null stay out of the index. A second empty string is still 422. Float, any, hash, array, and an unknown path raise `ArgumentError`. The index name is unchanged. Drop an existing index with that name before boot when its options change.
+
+### Changed
+* Requires Alumna **>= 0.13.0**.
+* Coverage CI is Ubuntu 26.04 and starts standalone MongoDB with `docker-topology.sh`. A GitHub `services: mongo:8.0` container does not receive `GLIBC_TUNABLES=glibc.pthread.rseq=1`, so MongoDB 8.0 exits on kernel 6.19+. Ubuntu 22.04 cannot link Crystal latest (`__isoc23_strtoul`).
+
 ## 1.1.0 - 2026-10-10
 
 ### Added

@@ -19,7 +19,7 @@ class Alumna::MongoAdapter
 
       indexed.each do |(path, fd)|
         next if id_path?(path)
-        add_index(models, names, seen, coll, [path], fd.unique, path)
+        add_index(models, names, seen, coll, schema, [path], fd.unique, fd.partial, path)
       end
 
       extras.each do |idx|
@@ -27,7 +27,7 @@ class Alumna::MongoAdapter
         next if fields.empty?
         next if fields.all? { |field| id_path?(field) }
         details_key = fields.size == 1 ? fields[0] : fields.join("_")
-        add_index(models, names, seen, coll, fields, idx.unique, details_key)
+        add_index(models, names, seen, coll, schema, fields, idx.unique, idx.partial, details_key)
       end
 
       if models.empty?
@@ -48,8 +48,10 @@ class Alumna::MongoAdapter
       names : Hash(String, String),
       seen : Set(String),
       coll : String,
+      schema : Schema,
       fields : Array(String),
       unique : Bool,
+      partial : Bool,
       details_key : String,
     ) : Nil
       sig = fields.size == 1 ? fields[0] : fields.join('\0')
@@ -67,15 +69,45 @@ class Alumna::MongoAdapter
       keys = BSON.build do |bson|
         fields.each { |field| bson[field] = 1 }
       end
+      filter = partial ? partial_filter(schema, fields) : nil
       options = BSON.build do |bson|
         bson["name"] = name
         bson["unique"] = unique
+        if filter
+          bson["partialFilterExpression"] = filter
+        end
       end
       models << BSON.build do |bson|
         bson["keys"] = keys
         bson["options"] = options
       end
       names[name] = details_key
+    end
+
+    # One `$type` clause per key. MongoDB ANDs them. Missing and null are not that type.
+    private def self.partial_filter(schema : Schema, fields : Array(String)) : BSON
+      BSON.build do |bson|
+        fields.each do |path|
+          fd = schema.find_field(path)
+          unless fd
+            raise ArgumentError.new("partial index field #{path} is not on the schema")
+          end
+          bson.document(path) do
+            bson["$type"] = partial_bson_type(path, fd.type)
+          end
+        end
+      end
+    end
+
+    private def self.partial_bson_type(path : String, type : FieldType) : String
+      case type
+      when .str?   then "string"
+      when .int?   then "long"
+      when .bool?  then "bool"
+      when .time?  then "date"
+      when .bytes? then "binData"
+      else              raise ArgumentError.new("partial index #{path} does not support #{type}")
+      end
     end
 
     private def self.id_path?(path : String) : Bool
