@@ -306,6 +306,7 @@ Sort order is MongoDB's. Missing values sort as nulls (first when ascending). Mi
 ```crystal
 UserSchema = Alumna::Schema.new
   .str("email", unique: true)
+  .str("phone_pair", unique: true, required: false, partial: true)
   .str("role", indexed: true)
   .index(["email", "role"])
 ```
@@ -314,7 +315,23 @@ Names are stable: `uniq_<collection>_<fields>` or `idx_<collection>_<fields>`. A
 
 Duplicate key **11000** becomes **422**. The details hash is `{ "<field path>" => "already exists" }` when the server error contains ` index: NAME` and that name is one this adapter created. Otherwise the key is `"error"`.
 
-These indexes are not sparse. Two documents that both omit the same unique field also conflict (**422**).
+An index without `partial: true` is not sparse. Two documents that both omit that unique field conflict (**422**).
+
+`partial: true` with `unique: true` writes `partialFilterExpression`. Each key gets one `$type` clause, and MongoDB ANDs them:
+
+| Field | `$type` |
+|---|---|
+| string | `string` |
+| int | `long` |
+| bool | `bool` |
+| time | `date` |
+| bytes | `binData` |
+
+A document enters the index only when every key has that type. Missing and BSON null stay out, so many leads can omit the field. An empty string is type `string`, so a second `""` is **422**. Float, any, hash, array, and a path that is not on the schema raise `ArgumentError` from `Indexes.prepare`. `partial: true` without `unique: true` raises `ArgumentError` from the schema.
+
+Field indexes are built before `schema.index`. The same key list keeps the first declaration. Set `partial: true` on the field itself.
+
+The index name does not change. `create_indexes!` does not drop an older index. Drop that name before the next boot when its options change. MongoDB reports code 86 for that clash.
 
 ---
 

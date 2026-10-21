@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0 - 2026-10-21
+
+### Added
+* `partial: true` on a unique field or a unique `schema.index` writes `partialFilterExpression`. The filter is `$type` `string`, `long`, `bool`, `date`, or `binData` for each key. Missing and BSON null stay out of the index. A second empty string is still 422. Float, any, hash, array, and an unknown path raise `ArgumentError`. The index name is unchanged. Drop an existing index with that name before boot when its options change.
+
+### Changed
+* Requires Alumna **>= 0.13.0**.
+
 ## 1.1.0 - 2026-10-10
 
 ### Added
